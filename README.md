@@ -55,6 +55,29 @@ git clone https://github.com/olaola-chat/OP-AI-SPEC-CODING-ENV.git /tmp/op-ai-wo
 - `.ai-env/`：在项目内单独安装 openskills/openspec（不污染全局环境，也不干扰项目生产依赖）
 - `.claude/skills/`：由 OpenSkills 安装的 skills 目录（OpenSpec skill 会被安装在这里）
 
+## 📦 当前内置技能
+
+初始化脚本默认安装以下核心技能：
+
+### 1. OpenSpec (核心)
+这是本环境的“大脑”，负责需求管理与规格定义。
+- **能力**：管理 Spec-Driven Development (SDD) 的完整生命周期。
+- **主要指令**：
+  - `proposal`：将模糊需求转化为结构化的变更提案。
+  - `apply`：根据提案执行具体的代码变更任务。
+  - `archive`：将完成的变更归档，合并到系统规格中。
+- **解决痛点**：防止 AI 在长对话中丢失上下文或偏离原始需求。
+
+### 扩展更多技能
+本环境基于 [OpenSkills](https://github.com/numman-ali/openskills) 构建，你可以随时安装更多社区技能（如 PDF 处理、浏览器自动化等）来增强 AI 能力：
+
+```bash
+# 示例：安装 Anthropic 官方技能库
+npx openskills install anthropics/skills
+```
+
+安装后运行 `npx openskills sync`，新技能就会自动出现在 `AGENTS.md` 中供 AI 使用。
+
 ## 最小使用流程（你只要记住这 4 句）
 
 你不需要自己运行 `npx`。这些命令应该由 AI 在需要时自动运行（并把结果文件展示给你审阅）。你只需要用自然语言驱动流程：
