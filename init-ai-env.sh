@@ -38,13 +38,13 @@ fi
 OPENSKILLS_BIN="${AI_ENV_DIR}/node_modules/.bin/openskills"
 OPENSPEC_BIN="${AI_ENV_DIR}/node_modules/.bin/openspec"
 
-# 1. Clone OpenSkills repo and install ALL skills
-echo "Cloning OpenSkills repository..."
-rm -rf "${AI_ENV_DIR}/openskills-repo"
-git clone https://github.com/numman-ali/openskills.git "${AI_ENV_DIR}/openskills-repo"
+# 1. Clone Anthropic Skills repo and install ALL skills
+echo "Cloning Anthropic Skills repository..."
+rm -rf "${AI_ENV_DIR}/anthropics-skills-repo"
+git clone https://github.com/anthropics/skills.git "${AI_ENV_DIR}/anthropics-skills-repo"
 
-echo "Installing all OpenSkills..."
-for skill_dir in "${AI_ENV_DIR}/openskills-repo/skills"/*; do
+echo "Installing all Anthropic Skills..."
+for skill_dir in "${AI_ENV_DIR}/anthropics-skills-repo/skills"/*; do
   if [ -d "$skill_dir" ]; then
     skill_name=$(basename "$skill_dir")
     echo "Installing skill: $skill_name"
@@ -121,3 +121,12 @@ fi
 
 echo "Done."
 echo "Next: read AI_WORKFLOW_GUIDE.md"
+echo ""
+echo "IMPORTANT: To verify and finalize the environment, please copy and paste the following prompt to your AI assistant:"
+echo "--------------------------------------------------------------------------------"
+echo "Please check the current environment. I have just run the 'init-ai-env.sh' script."
+echo "1. Verify that 'AGENTS.md' exists and contains a list of available skills (including OpenSpec and Anthropic skills)."
+echo "2. If any skills are missing from 'AGENTS.md', run 'npx openskills sync' to update it."
+echo "3. Confirm that you can see the 'openspec' skill and at least one other skill (e.g., 'pdf' or 'frontend-design')."
+echo "4. Once verified, tell me 'AI Environment is ready 🚀'."
+echo "--------------------------------------------------------------------------------"
