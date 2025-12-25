@@ -86,6 +86,43 @@ git clone https://github.com/olaola-chat/OP-AI-SPEC-CODING-ENV.git /tmp/op-ai-wo
 3. **Update Specs**: Keep specs as the source of truth.
 ```
 
+### 2. Anthropic 官方技能 (推荐)
+通过 `npx openskills install anthropics/skills` 安装，包含以下强大能力：
+
+#### 📄 文档处理技能 (Document Skills)
+| 技能名 | 描述 |
+|--------|------|
+| **docx** | 创建、编辑和分析 Word 文档。支持修订跟踪、评论、格式保留和文本提取。 |
+| **pdf** | 综合 PDF 处理工具包。支持提取文本/表格、创建新 PDF、合并/拆分文档以及表单处理。 |
+| **pptx** | 创建、编辑和分析 PowerPoint 演示文稿。支持布局、模板、图表和自动化幻灯片生成。 |
+| **xlsx** | 创建、编辑和分析 Excel 电子表格。支持公式、格式化、数据分析和可视化。 |
+
+#### 🎨 设计与创意 (Design & Creative)
+| 技能名 | 描述 |
+|--------|------|
+| **algorithmic-art** | 使用 p5.js 创建生成艺术，支持随机种子、流场和粒子系统。 |
+| **canvas-design** | 使用设计哲学创建精美的 .png 和 .pdf 格式视觉艺术。 |
+| **slack-gif-creator** | 创建针对 Slack 尺寸约束优化的动画 GIF。 |
+
+#### 💻 开发工具 (Development)
+| 技能名 | 描述 |
+|--------|------|
+| **frontend-design** | 指导 AI 避免“AI 垃圾代码”，做出大胆的设计决策。特别适用于 React & Tailwind。 |
+| **artifacts-builder** | 使用 React、Tailwind CSS 和 shadcn/ui 组件构建复杂的 HTML 制品。 |
+| **mcp-builder** | 创建高质量 MCP (Model Context Protocol) 服务器的指南，用于集成外部 API 和服务。 |
+| **webapp-testing** | 使用 Playwright 进行本地 Web 应用的 UI 验证和调试。 |
+
+#### 📢 沟通与品牌 (Communication)
+| 技能名 | 描述 |
+|--------|------|
+| **brand-guidelines** | 将官方品牌颜色和排版应用到生成的制品中。 |
+| **internal-comms** | 撰写内部沟通文档，如状态报告、时事通讯和常见问题解答 (FAQs)。 |
+
+#### 🛠️ 技能创建 (Skill Creation)
+| 技能名 | 描述 |
+|--------|------|
+| **skill-creator** | 交互式技能创建工具，通过问答引导你构建新的 AI 技能。 |
+
 ### 扩展更多技能
 本环境基于 [OpenSkills](https://github.com/numman-ali/openskills) 构建，你可以随时安装更多社区技能（如 PDF 处理、浏览器自动化等）来增强 AI 能力：
 
