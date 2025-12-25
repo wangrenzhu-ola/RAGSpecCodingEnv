@@ -62,11 +62,29 @@ git clone https://github.com/olaola-chat/OP-AI-SPEC-CODING-ENV.git /tmp/op-ai-wo
 ### 1. OpenSpec (核心)
 这是本环境的“大脑”，负责需求管理与规格定义。
 - **能力**：管理 Spec-Driven Development (SDD) 的完整生命周期。
-- **主要指令**：
-  - `proposal`：将模糊需求转化为结构化的变更提案。
-  - `apply`：根据提案执行具体的代码变更任务。
-  - `archive`：将完成的变更归档，合并到系统规格中。
 - **解决痛点**：防止 AI 在长对话中丢失上下文或偏离原始需求。
+
+**技能详情 (SKILL.md 内容预览)**：
+```markdown
+## Capabilities
+- **Spec-Driven Development**: You should always look for specs in `openspec/specs/` before coding.
+- **Change Management**: All major changes should go through a Proposal -> Implementation -> Archive lifecycle.
+
+## Commands
+- **Create Proposal**: `npx openspec proposal "Description of change"`
+  - *Trigger*: When user requests a new feature or significant refactor.
+- **Apply Change**: `npx openspec apply <change-id>`
+  - *Trigger*: When you are ready to implement the code for a proposal.
+- **Archive Change**: `npx openspec archive <change-id>`
+  - *Trigger*: When implementation is done and verified.
+- **List Changes**: `npx openspec changes`
+  - *Trigger*: To see what is currently in progress.
+
+## Workflow Rules
+1. **Always Check Specs**: Before writing code, read relevant specs in `openspec/specs/`.
+2. **Propose First**: For non-trivial changes, create a proposal first using `npx openspec proposal`.
+3. **Update Specs**: Keep specs as the source of truth.
+```
 
 ### 扩展更多技能
 本环境基于 [OpenSkills](https://github.com/numman-ali/openskills) 构建，你可以随时安装更多社区技能（如 PDF 处理、浏览器自动化等）来增强 AI 能力：
