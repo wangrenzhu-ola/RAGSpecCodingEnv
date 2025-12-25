@@ -6,7 +6,6 @@ echo "Initializing AI Development Environment..."
 PROJECT_ROOT="$(pwd)"
 AI_ENV_DIR="${PROJECT_ROOT}/.ai-env"
 SKILLS_SRC_DIR="${AI_ENV_DIR}/skills-src"
-OPENSPEC_SKILL_SRC="${SKILLS_SRC_DIR}/openspec"
 
 rm -rf "${AI_ENV_DIR}"
 
@@ -39,10 +38,29 @@ fi
 OPENSKILLS_BIN="${AI_ENV_DIR}/node_modules/.bin/openskills"
 OPENSPEC_BIN="${AI_ENV_DIR}/node_modules/.bin/openspec"
 
-mkdir -p "${SKILLS_SRC_DIR}"
-mkdir -p "${OPENSPEC_SKILL_SRC}"
+# 1. Clone OpenSkills repo and install ALL skills
+echo "Cloning OpenSkills repository..."
+rm -rf "${AI_ENV_DIR}/openskills-repo"
+git clone https://github.com/numman-ali/openskills.git "${AI_ENV_DIR}/openskills-repo"
 
-cat > "${OPENSPEC_SKILL_SRC}/SKILL.md" <<'EOF'
+echo "Installing all OpenSkills..."
+for skill_dir in "${AI_ENV_DIR}/openskills-repo/skills"/*; do
+  if [ -d "$skill_dir" ]; then
+    skill_name=$(basename "$skill_dir")
+    echo "Installing skill: $skill_name"
+    "${OPENSKILLS_BIN}" install "$skill_dir" --yes || echo "Warning: Failed to install skill $skill_name"
+  fi
+done
+
+# 2. Clone OpenSpec repo and make it a skill
+echo "Cloning OpenSpec repository..."
+rm -rf "${AI_ENV_DIR}/openspec-repo"
+git clone https://github.com/Fission-AI/OpenSpec.git "${AI_ENV_DIR}/openspec-repo"
+
+# Ensure OpenSpec has a SKILL.md (Create if missing, as it might not be in the repo root yet)
+if [ ! -f "${AI_ENV_DIR}/openspec-repo/SKILL.md" ]; then
+  echo "Creating SKILL.md for OpenSpec..."
+  cat > "${AI_ENV_DIR}/openspec-repo/SKILL.md" <<'EOF'
 ---
 name: openspec
 description: Spec-driven development workflow (proposal/apply/archive) to keep requirements explicit and prevent scope drift.
@@ -71,8 +89,10 @@ Use this skill whenever the user request:
 - Archive proposal: `npx openspec archive <change-id>`
 - List changes: `npx openspec changes`
 EOF
+fi
 
-"${OPENSKILLS_BIN}" install "${OPENSPEC_SKILL_SRC}" --yes || true
+echo "Installing OpenSpec as a skill..."
+"${OPENSKILLS_BIN}" install "${AI_ENV_DIR}/openspec-repo" --yes
 
 if [ ! -d "${PROJECT_ROOT}/openspec" ]; then
   if "${OPENSPEC_BIN}" init --help 2>/dev/null | grep -q -- "--skip-tools"; then
