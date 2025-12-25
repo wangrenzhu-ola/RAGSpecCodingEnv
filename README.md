@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # OP-AI-WORKSPACE（OpenSkills + OpenSpec 标准化 AI 开发环境）
 
 这是一套“可一键初始化”的 AI Coding 工作区标准，把两类能力组合在一起，让团队在成熟项目里也能稳定使用 AI 编程。
@@ -149,3 +150,7 @@ npx openskills install anthropics/skills
 把下面这段话复制到 Trae 的 AI 对话里（建议在目标工程根目录执行完初始化后立刻验证）：
 
 > 请先阅读并遵守当前仓库的 `AGENTS.md`。然后列出你能使用的 skills，并加载 OpenSpec skill。接着为“新增 /healthz 健康检查接口（仅规划，不写代码）”创建一个 OpenSpec proposal，并告诉我在 `openspec/changes/` 下生成了哪些文件、proposal 的 change-id 是什么，以及我下一步应该如何审阅它。
+=======
+# OP-AI-SPEC-CODING-ENV
+Spec Driven Development + OpenSkill 持续更新 AI技能 提高AI编程效率和准度
+>>>>>>> origin/master
