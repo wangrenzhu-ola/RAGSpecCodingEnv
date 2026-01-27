@@ -1,33 +1,25 @@
-# Spec 02: 可视化编辑器与服务 (Visual Editor & Service)
+# Spec 02: Visual Editor (可视化编辑器)
 
-## ADDED Requirements
+## 目标
+提供一个基于 Web 的可视化编辑环境，用于导入 Sketch 设计稿，查看解析后的图层结构，进行人工微调（如标记组件、调整布局参数），并最终导出符合规范的 Layout JSON。
 
-### Requirement: 交互式标注界面
-该组件必须 (`SHALL`) 提供一个 Web 界面，允许用户在设计图上可视化地绑定切图和设置布局参数。
+## 核心功能
+1.  **Import**: 上传并解析 Sketch 文件 (调用 Spec 01 Parser)。
+2.  **Visualize**: 渲染图层树，展示属性 (X, Y, Width, Height, Style)。
+3.  **Edit**:
+    - **Layout Tweaking**: 修改位置、尺寸、Padding、Alignment。
+    - **Logic Hooks**: 标记动态属性 (IsDynamic)，关联业务逻辑参数。
+    - **Component Marking**: 标记复用组件。
+4.  **Correction Management**:
+    - 记录用户对布局的修改（如 "将此 Group 强制设为 VStack"，"手动设置 Margin-Top 为 20px"）。
+    - 生成 `layout.json` 修正文件，以便下次解析同一 Sketch 文件时复用这些修正。
+5.  **Export**: 
+    - 生成清洗后的 Layout JSON，作为 Spec 03 DSL Generator 的输入。
+    - 导出 `layout.json` 供 Parser 使用。
 
-#### Scenario: 拖拽绑定切图
-- **GIVEN** 解析后的设计图展示在画布上，右侧列出未绑定的切图资源
-- **WHEN** 用户将切图拖拽到画布的特定区域
-- **THEN** 在该区域生成一个控件节点 (Node)。
-- **AND** 自动记录该节点的 `bounds` (x, y, w, h) 和关联的 `assetId`。
+## 输入
+- Sketch File (.sketch)
 
-#### Scenario: 布局约束配置
-- **GIVEN** 画布上已选中的一个控件节点
-- **WHEN** 用户在属性面板设置 Padding/Margin 或 Flex 比例
-- **THEN** 实时更新该节点的 `LayoutSpec` 数据。
-
-### Requirement: 自动化服务部署
-该编辑器必须 (`SHALL`) 能够作为一个独立的本地服务自动启动，无需用户配置复杂的环境。
-
-#### Scenario: 一键启动
-- **WHEN** 用户运行 `openskills run flutter-ui-visual-fidelity`
-- **THEN** 自动启动本地 HTTP 服务 (e.g., localhost:3000)。
-- **AND** 自动打开浏览器并加载当前项目的设计资源。
-
-### Requirement: 结构化数据二次生成
-编辑器必须 (`SHALL`) 支持保存操作，将画布上的可视状态序列化为最终的 `layout_spec.json`。
-
-#### Scenario: 保存 LayoutSpec
-- **WHEN** 用户点击“保存”或“生成”按钮
-- **THEN** 校验所有必填字段（如根节点类型）。
-- **AND** 将内存中的状态写入磁盘上的 `layout_spec.json` 文件。
+## 输出
+- Layout JSON (Raw UI Tree)
+- Layout Correction File (`layout.json`)
