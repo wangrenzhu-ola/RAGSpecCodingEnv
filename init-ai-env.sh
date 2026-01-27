@@ -52,6 +52,24 @@ for skill_dir in "${AI_ENV_DIR}/anthropics-skills-repo/skills"/*; do
   fi
 done
 
+# 1.5. Clone and install Community Skills (alirezarezvani/claude-skills)
+echo "Cloning Community Skills repository (alirezarezvani/claude-skills)..."
+rm -rf "${AI_ENV_DIR}/community-skills-repo"
+git clone https://github.com/alirezarezvani/claude-skills.git "${AI_ENV_DIR}/community-skills-repo"
+
+echo "Installing all Community Skills..."
+# Find all directories containing SKILL.md and install them
+if [ -d "${AI_ENV_DIR}/community-skills-repo" ]; then
+    find "${AI_ENV_DIR}/community-skills-repo" -name "SKILL.md" -print0 | while IFS= read -r -d '' skill_file; do
+      skill_dir=$(dirname "$skill_file")
+      skill_name=$(basename "$skill_dir")
+      # Skip if it's the root repo SKILL.md (if any, though usually skills are in subdirs)
+      # But openskills install handles paths fine.
+      echo "Installing community skill: $skill_name"
+      "${OPENSKILLS_BIN}" install "$skill_dir" --yes || echo "Warning: Failed to install community skill $skill_name"
+    done
+fi
+
 # 2. Clone OpenSpec repo and make it a skill
 echo "Cloning OpenSpec repository..."
 rm -rf "${AI_ENV_DIR}/openspec-repo"
