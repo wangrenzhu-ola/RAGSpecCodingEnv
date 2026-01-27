@@ -60,70 +60,154 @@ git clone https://github.com/olaola-chat/OP-AI-SPEC-CODING-ENV.git /tmp/op-ai-wo
 初始化脚本默认安装以下核心技能：
 
 ### 1. OpenSpec (核心)
+
 这是本环境的“大脑”，负责需求管理与规格定义。
+
 - **能力**：管理 Spec-Driven Development (SDD) 的完整生命周期。
 - **解决痛点**：防止 AI 在长对话中丢失上下文或偏离原始需求。
 
 **技能详情 (SKILL.md 内容预览)**：
+
 ```markdown
 ## Capabilities
+
 - **Spec-Driven Development**: You should always look for specs in `openspec/specs/` before coding.
 - **Change Management**: All major changes should go through a Proposal -> Implementation -> Archive lifecycle.
 
 ## Commands
+
 - **Create Proposal**: `npx openspec proposal "Description of change"`
-  - *Trigger*: When user requests a new feature or significant refactor.
+  - _Trigger_: When user requests a new feature or significant refactor.
 - **Apply Change**: `npx openspec apply <change-id>`
-  - *Trigger*: When you are ready to implement the code for a proposal.
+  - _Trigger_: When you are ready to implement the code for a proposal.
 - **Archive Change**: `npx openspec archive <change-id>`
-  - *Trigger*: When implementation is done and verified.
+  - _Trigger_: When implementation is done and verified.
 - **List Changes**: `npx openspec changes`
-  - *Trigger*: To see what is currently in progress.
+  - _Trigger_: To see what is currently in progress.
 
 ## Workflow Rules
+
 1. **Always Check Specs**: Before writing code, read relevant specs in `openspec/specs/`.
 2. **Propose First**: For non-trivial changes, create a proposal first using `npx openspec proposal`.
 3. **Update Specs**: Keep specs as the source of truth.
 ```
 
 ### 2. Anthropic 官方技能 (推荐)
+
 通过 `npx openskills install anthropics/skills` 安装，包含以下强大能力：
 
 #### 📄 文档处理技能 (Document Skills)
-| 技能名 | 描述 |
-|--------|------|
-| **docx** | 创建、编辑和分析 Word 文档。支持修订跟踪、评论、格式保留和文本提取。 |
-| **pdf** | 综合 PDF 处理工具包。支持提取文本/表格、创建新 PDF、合并/拆分文档以及表单处理。 |
-| **pptx** | 创建、编辑和分析 PowerPoint 演示文稿。支持布局、模板、图表和自动化幻灯片生成。 |
-| **xlsx** | 创建、编辑和分析 Excel 电子表格。支持公式、格式化、数据分析和可视化。 |
+
+| 技能名   | 描述                                                                            |
+| -------- | ------------------------------------------------------------------------------- |
+| **docx** | 创建、编辑和分析 Word 文档。支持修订跟踪、评论、格式保留和文本提取。            |
+| **pdf**  | 综合 PDF 处理工具包。支持提取文本/表格、创建新 PDF、合并/拆分文档以及表单处理。 |
+| **pptx** | 创建、编辑和分析 PowerPoint 演示文稿。支持布局、模板、图表和自动化幻灯片生成。  |
+| **xlsx** | 创建、编辑和分析 Excel 电子表格。支持公式、格式化、数据分析和可视化。           |
 
 #### 🎨 设计与创意 (Design & Creative)
-| 技能名 | 描述 |
-|--------|------|
-| **algorithmic-art** | 使用 p5.js 创建生成艺术，支持随机种子、流场和粒子系统。 |
-| **canvas-design** | 使用设计哲学创建精美的 .png 和 .pdf 格式视觉艺术。 |
-| **slack-gif-creator** | 创建针对 Slack 尺寸约束优化的动画 GIF。 |
+
+| 技能名                | 描述                                                    |
+| --------------------- | ------------------------------------------------------- |
+| **algorithmic-art**   | 使用 p5.js 创建生成艺术，支持随机种子、流场和粒子系统。 |
+| **canvas-design**     | 使用设计哲学创建精美的 .png 和 .pdf 格式视觉艺术。      |
+| **slack-gif-creator** | 创建针对 Slack 尺寸约束优化的动画 GIF。                 |
 
 #### 💻 开发工具 (Development)
-| 技能名 | 描述 |
-|--------|------|
-| **frontend-design** | 指导 AI 避免“AI 垃圾代码”，做出大胆的设计决策。特别适用于 React & Tailwind。 |
-| **artifacts-builder** | 使用 React、Tailwind CSS 和 shadcn/ui 组件构建复杂的 HTML 制品。 |
-| **mcp-builder** | 创建高质量 MCP (Model Context Protocol) 服务器的指南，用于集成外部 API 和服务。 |
-| **webapp-testing** | 使用 Playwright 进行本地 Web 应用的 UI 验证和调试。 |
+
+| 技能名                | 描述                                                                            |
+| --------------------- | ------------------------------------------------------------------------------- |
+| **frontend-design**   | 指导 AI 避免“AI 垃圾代码”，做出大胆的设计决策。特别适用于 React & Tailwind。    |
+| **artifacts-builder** | 使用 React、Tailwind CSS 和 shadcn/ui 组件构建复杂的 HTML 制品。                |
+| **mcp-builder**       | 创建高质量 MCP (Model Context Protocol) 服务器的指南，用于集成外部 API 和服务。 |
+| **webapp-testing**    | 使用 Playwright 进行本地 Web 应用的 UI 验证和调试。                             |
 
 #### 📢 沟通与品牌 (Communication)
-| 技能名 | 描述 |
-|--------|------|
-| **brand-guidelines** | 将官方品牌颜色和排版应用到生成的制品中。 |
-| **internal-comms** | 撰写内部沟通文档，如状态报告、时事通讯和常见问题解答 (FAQs)。 |
+
+| 技能名               | 描述                                                          |
+| -------------------- | ------------------------------------------------------------- |
+| **brand-guidelines** | 将官方品牌颜色和排版应用到生成的制品中。                      |
+| **internal-comms**   | 撰写内部沟通文档，如状态报告、时事通讯和常见问题解答 (FAQs)。 |
 
 #### 🛠️ 技能创建 (Skill Creation)
-| 技能名 | 描述 |
-|--------|------|
+
+| 技能名            | 描述                                                 |
+| ----------------- | ---------------------------------------------------- |
 | **skill-creator** | 交互式技能创建工具，通过问答引导你构建新的 AI 技能。 |
 
+### 3. Community 增强技能 (高级专家角色)
+
+通过初始化脚本自动安装，引入了大量 "Senior" 级别的专家角色与工具，覆盖研发、产品、管理与合规四大领域：
+
+#### 👨‍💻 高级工程师角色 (Engineering & Architecture)
+
+| 技能名                     | 描述                                                  |
+| -------------------------- | ----------------------------------------------------- |
+| **senior-architect**       | 系统架构师，提供技术选型、设计模式与系统设计建议。    |
+| **aws-solution-architect** | AWS 解决方案架构师，专注于云原生架构设计。            |
+| **senior-fullstack**       | 全栈开发专家，精通前后端集成与最佳实践。              |
+| **senior-backend**         | 后端专家，专注于高性能、可扩展的后端系统设计。        |
+| **senior-frontend**        | 前端专家，专注于现代前端架构与用户体验。              |
+| **senior-devops**          | DevOps 专家，涵盖 CI/CD、基础设施即代码与云原生技术。 |
+| **senior-secops**          | 安全运维专家，专注于系统安全与合规。                  |
+| **senior-security**        | 高级安全专家，负责应用与数据安全策略。                |
+| **senior-data-engineer**   | 高级数据工程师，专注于数据管道与数仓建设。            |
+| **senior-data-scientist**  | 高级数据科学家，专注于数据分析与建模。                |
+| **senior-ml-engineer**     | 机器学习工程师，专注于模型训练与部署。                |
+| **senior-computer-vision** | 计算机视觉专家，专注于图像处理与视觉算法。            |
+| **senior-prompt-engineer** | 提示词工程专家，优化 LLM 交互与输出质量。             |
+| **senior-qa**              | 高级 QA 工程师，制定测试策略与质量保障体系。          |
+| **ms365-tenant-manager**   | Microsoft 365 租户管理专家。                          |
+
+#### 🛠 质量与评估 (Quality & Evaluation)
+
+| 技能名                   | 描述                                                   |
+| ------------------------ | ------------------------------------------------------ |
+| **code-reviewer**        | 自动代码审查工具，识别潜在 bug、安全漏洞与代码坏味道。 |
+| **tdd-guide**            | 测试驱动开发向导，指导编写高质量的测试用例与实现。     |
+| **tech-stack-evaluator** | 技术栈评估工具，分析引入新库或框架的利弊与适用性。     |
+
+#### 💼 管理与战略 (Management & Strategy)
+
+| 技能名          | 描述                                       |
+| --------------- | ------------------------------------------ |
+| **ceo-advisor** | CEO 顾问，提供企业战略与商业决策支持。     |
+| **cto-advisor** | 技术战略顾问，提供技术愿景与团队管理建议。 |
+
+#### 🚀 产品与营销 (Product & Marketing)
+
+| 技能名                           | 描述                                                     |
+| -------------------------------- | -------------------------------------------------------- |
+| **product-manager-toolkit**      | 产品经理工具箱，辅助需求分析、用户故事编写与优先级管理。 |
+| **agile-product-owner**          | 敏捷 PO 角色，负责 Backlog 管理与迭代规划。              |
+| **product-strategist**           | 产品战略专家，制定产品路线图与市场定位。                 |
+| **marketing-strategy-pmm**       | 产品营销策略专家，负责 GTM 策略与市场推广。              |
+| **marketing-demand-acquisition** | 市场获客专家，专注于流量获取与转化率优化。               |
+| **app-store-optimization**       | ASO 专家，优化应用商店排名与转化。                       |
+| **content-creator**              | 内容创作者，辅助生成营销文案与内容策略。                 |
+| **social-media-analyzer**        | 社交媒体分析师，分析社媒趋势与用户反馈。                 |
+| **ux-researcher-designer**       | UX 研究与设计专家，关注用户体验与交互设计。              |
+| **ui-design-system**             | UI 设计系统专家，构建一致的视觉规范与组件库。            |
+
+#### ⚖️ 合规与法规 (Compliance & Regulatory)
+
+| 技能名                                    | 描述                                         |
+| ----------------------------------------- | -------------------------------------------- |
+| **gdpr-dsgvo-expert**                     | GDPR/DSGVO 合规专家，确保数据隐私合规。      |
+| **information-security-manager-iso27001** | ISO 27001 信息安全管理专家。                 |
+| **quality-manager-qms-iso13485**          | ISO 13485 医疗器械质量管理专家。             |
+| **quality-manager-qmr**                   | 质量管理代表 (QMR)，负责质量体系运行。       |
+| **quality-documentation-manager**         | 质量文档管理专家，维护合规文档体系。         |
+| **qms-audit-expert**                      | 质量管理体系审计专家。                       |
+| **isms-audit-expert**                     | 信息安全管理体系审计专家。                   |
+| **risk-management-specialist**            | 风险管理专家，识别与评估项目风险。           |
+| **regulatory-affairs-head**               | 法规事务负责人，确保产品符合行业法规。       |
+| **fda-consultant-specialist**             | FDA 法规顾问，辅助医疗器械 FDA 申报。        |
+| **mdr-745-specialist**                    | 欧盟 MDR (2017/745) 法规专家。               |
+| **capa-officer**                          | CAPA (纠正预防措施) 专员，处理质量问题闭环。 |
+
 ### 扩展更多技能
+
 本环境基于 [OpenSkills](https://github.com/numman-ali/openskills) 构建，你可以随时安装更多社区技能（如 PDF 处理、浏览器自动化等）来增强 AI 能力：
 
 ```bash
