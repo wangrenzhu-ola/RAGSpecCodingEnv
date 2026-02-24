@@ -92,7 +92,14 @@ git clone https://github.com/olaola-chat/OP-AI-SPEC-CODING-ENV.git /tmp/op-ai-wo
 3. **Update Specs**: Keep specs as the source of truth.
 ```
 
-### 2. Anthropic 官方技能 (推荐)
+### 2. HKT 记忆引擎（渐进式披露）
+
+用于将长期记忆以 Root → Branch → Leaf 的树状结构组织，支持渐进式披露与主动检索，避免上下文过载。
+
+- **能力**：渐进式检索、结构化记忆写入、可追溯 Leaf 记录
+- **详情**：见 [DESIGN.md](./hkt-memory/DESIGN.md)
+
+### 3. Anthropic 官方技能 (推荐)
 
 通过 `npx openskills install anthropics/skills` 安装，包含以下强大能力：
 
@@ -135,7 +142,7 @@ git clone https://github.com/olaola-chat/OP-AI-SPEC-CODING-ENV.git /tmp/op-ai-wo
 | ----------------- | ---------------------------------------------------- |
 | **skill-creator** | 交互式技能创建工具，通过问答引导你构建新的 AI 技能。 |
 
-### 3. Community 增强技能 (高级专家角色)
+### 4. Community 增强技能 (高级专家角色)
 
 通过初始化脚本自动安装，引入了大量 "Senior" 级别的专家角色与工具，覆盖研发、产品、管理与合规四大领域：
 

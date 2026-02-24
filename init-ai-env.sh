@@ -112,6 +112,11 @@ fi
 echo "Installing OpenSpec as a skill..."
 "${OPENSKILLS_BIN}" install "${AI_ENV_DIR}/openspec-repo" --yes
 
+if [ -d "${PROJECT_ROOT}/hkt-memory" ]; then
+  echo "Installing local skill: hkt-memory..."
+  "${OPENSKILLS_BIN}" install "${PROJECT_ROOT}/hkt-memory" --yes
+fi
+
 if [ ! -d "${PROJECT_ROOT}/openspec" ]; then
   if "${OPENSPEC_BIN}" init --help 2>/dev/null | grep -q -- "--skip-tools"; then
     "${OPENSPEC_BIN}" init --skip-tools
@@ -132,6 +137,7 @@ You are an advanced AI software engineer operating in a Spec-Driven Development 
 3. **Propose**: For non-trivial changes, create an OpenSpec proposal first.
 4. **Implement**: Implement strictly according to the agreed proposal/specs.
 5. **Archive**: After verification, archive the change so specs stay authoritative.
+6. **Memory**: 每轮对话前通过 hkt-memory 技能检索记忆，对话完毕后通过 hkt-memory 技能储存关键记忆。
 EOF
 fi
 
