@@ -1,10 +1,11 @@
 import argparse
+import os
 import re
 import sys
 from datetime import datetime
 from pathlib import Path
 
-BASE_DIR = Path.cwd() / "memory"
+BASE_DIR = Path(os.environ.get("HKT_MEMORY_DIR", Path.cwd() / "memory"))
 
 
 def slugify(value: str) -> str:
@@ -22,6 +23,9 @@ FORBIDDEN_BRANCH_SLUGS = {
     slugify("temp"),
     slugify("conversation"),
 }
+
+ALLOWED_STATUS = {"现行", "过期", "未知"}
+ALLOWED_CONFIDENCE = {"高", "中", "低"}
 
 TAXONOMY = {
     slugify("HKT记忆系统"): {
@@ -154,16 +158,43 @@ def handle_add(args: argparse.Namespace) -> None:
 
     branch = candidate_branch
     branch_summary = args.branch_summary or suggested["branch_summary"] or (args.branch if args.branch else branch)
-    status = args.status or "现行"
-    confidence = args.confidence or "中"
+    status = validate_status(args.status or "现行")
+    confidence = validate_confidence(args.confidence or "中")
     scope = args.scope or "默认"
     source = args.source or "conversation"
     created_at = datetime.utcnow().isoformat()
+    updated_at = created_at
     leaf_id = args.id or f"leaf-{created_at.replace('-', '').replace(':', '')[:13]}-{slugify(title)}"
 
     root_dir = BASE_DIR / root
     branch_dir = root_dir / branch
     ensure_dir(branch_dir)
+
+    duplicate = find_duplicate_leaf(branch_dir, title, content_items)
+    if duplicate:
+        if args.merge_duplicate:
+            existing = read_text(duplicate)
+            existing_items = extract_content_items(existing)
+            new_items = [item for item in content_items if item not in existing_items]
+            if new_items:
+                merged_items = existing_items + new_items
+                updated = replace_content_items(existing, merged_items)
+                updated = upsert_field(updated, "updated_at", datetime.utcnow().isoformat())
+                write_text(duplicate, updated)
+                rel = duplicate.relative_to(BASE_DIR)
+                root = rel.parts[0]
+                branch = rel.parts[1]
+                existing_leaf_id = extract_field(updated, "id") or duplicate.stem
+                title = extract_field(updated, "title") or existing_leaf_id
+                status = extract_field(updated, "status") or status
+                ensure_leaf_index(root, branch, existing_leaf_id, title, status, datetime.utcnow().isoformat())
+                print(f"检测到重复 Leaf，已合并内容: {duplicate}")
+                return
+            print(f"检测到重复 Leaf，内容无新增: {duplicate}")
+            return
+        if args.dedupe:
+            print(f"检测到重复 Leaf，已跳过写入: {duplicate}")
+            return
 
     ensure_root_index(root, root_summary)
     ensure_branch_index(root, branch, branch_summary)
@@ -177,6 +208,7 @@ def handle_add(args: argparse.Namespace) -> None:
         f"confidence: {confidence}",
         f"scope: {scope}",
         f"created_at: {created_at}",
+        f"updated_at: {updated_at}",
         f"source: {source}",
         "content:",
     ] + [f"- {item}" for item in content_items] + [""]
@@ -240,6 +272,14 @@ def remove_branch_from_root_index(root_index_path: Path, branch: str) -> None:
     if not content:
         return
     lines = [line for line in content.split("\n") if not line.startswith(f"- Branch: {branch} | ")]
+    write_text(root_index_path, normalize_lines(lines))
+
+
+def remove_root_from_index(root_index_path: Path, root: str) -> None:
+    content = read_text(root_index_path)
+    if not content:
+        return
+    lines = [line for line in content.split("\n") if not line.startswith(f"- Root: {root} | ")]
     write_text(root_index_path, normalize_lines(lines))
 
 
@@ -319,20 +359,213 @@ def handle_reclassify(args: argparse.Namespace) -> None:
     print(f"  to:   {new_root}/{new_branch}")
 
 
+def handle_expire(args: argparse.Namespace) -> None:
+    leaf_id = args.id.strip()
+    leaf_path = find_leaf_path_by_id(leaf_id)
+    if not leaf_path:
+        raise ValueError(f"未找到 Leaf 文件: {leaf_id}")
+
+    content = read_text(leaf_path)
+    new_status = validate_status(args.status or "过期")
+    updated_content = upsert_field(content, "status", new_status)
+    updated_content = upsert_field(updated_content, "updated_at", datetime.utcnow().isoformat())
+    write_text(leaf_path, updated_content)
+
+    rel = leaf_path.relative_to(BASE_DIR)
+    root = rel.parts[0]
+    branch = rel.parts[1]
+    title = extract_field(updated_content, "title") or leaf_id
+    updated_at = datetime.utcnow().isoformat()
+    ensure_leaf_index(root, branch, leaf_id, title, new_status, updated_at)
+
+    print(f"已更新 Leaf 状态: {leaf_path}")
+    print(f"  status: {new_status}")
+
+
+def handle_prune(args: argparse.Namespace) -> None:
+    if not BASE_DIR.exists():
+        print("memory 目录不存在")
+        return
+
+    before_days = args.before_days
+    status_filter = validate_status(args.status) if args.status else "过期"
+    cutoff = datetime.utcnow().timestamp() - (before_days * 86400)
+    removed = 0
+
+    for root_dir in list_dirs(BASE_DIR):
+        root_path = BASE_DIR / root_dir
+        for branch_dir in list_dirs(root_path):
+            branch_path = root_path / branch_dir
+            for leaf_path in list_leaf_files(branch_path):
+                content = read_text(leaf_path)
+                status = extract_field(content, "status") or "未知"
+                if status != status_filter:
+                    continue
+                updated_at = parse_datetime(extract_field(content, "updated_at"))
+                created_at = parse_datetime(extract_field(content, "created_at"))
+                timestamp = None
+                if updated_at:
+                    timestamp = updated_at.timestamp()
+                elif created_at:
+                    timestamp = created_at.timestamp()
+                else:
+                    timestamp = leaf_path.stat().st_mtime
+                if timestamp > cutoff:
+                    continue
+                if args.dry_run:
+                    print(f"将删除: {leaf_path}")
+                else:
+                    leaf_id = extract_field(content, "id") or leaf_path.stem
+                    leaf_path.unlink()
+                    remove_leaf_from_branch_index(branch_path / "index.md", leaf_id)
+                    remaining = [p for p in branch_path.iterdir() if p.is_file() and p.name.endswith(".md") and p.name != "index.md"]
+                    if len(remaining) == 0 and (branch_path / "index.md").exists():
+                        (branch_path / "index.md").unlink()
+                        branch_path.rmdir()
+                        remove_branch_from_root_index(root_path / "index.md", branch_dir)
+                    if not any(entry.is_dir() for entry in root_path.iterdir()):
+                        root_index = root_path / "index.md"
+                        if root_index.exists():
+                            root_index.unlink()
+                        remove_root_from_index(BASE_DIR / "index.md", root_dir)
+                        root_path.rmdir()
+                    removed += 1
+    if args.dry_run:
+        print("dry-run 完成")
+    else:
+        print(f"已删除 Leaf: {removed}")
+
+
 def list_dirs(path: Path) -> list[str]:
     if not path.exists():
         return []
-    return [entry.name for entry in path.iterdir() if entry.is_dir()]
+    return sorted(entry.name for entry in path.iterdir() if entry.is_dir())
 
 
 def list_leaf_files(path: Path) -> list[Path]:
     if not path.exists():
         return []
-    return [
+    return sorted(
         entry
         for entry in path.iterdir()
         if entry.is_file() and entry.suffix == ".md" and entry.name != "index.md"
-    ]
+    )
+
+
+def parse_datetime(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value)
+    except ValueError:
+        return None
+
+
+def leaf_sort_key(leaf_path: Path) -> tuple[bool, datetime]:
+    content = read_text(leaf_path)
+    updated_at = extract_field(content, "updated_at")
+    parsed = parse_datetime(updated_at)
+    if parsed:
+        return (False, parsed)
+    created_at = extract_field(content, "created_at")
+    parsed = parse_datetime(created_at)
+    if parsed:
+        return (False, parsed)
+    return (True, datetime.utcfromtimestamp(leaf_path.stat().st_mtime))
+
+
+def upsert_field(content: str, field: str, value: str) -> str:
+    lines = content.split("\n")
+    pattern = re.compile(rf"^{re.escape(field)}:\s*.*$")
+    for index, line in enumerate(lines):
+        if pattern.match(line):
+            lines[index] = f"{field}: {value}"
+            return "\n".join(lines)
+    insert_index = None
+    for index, line in enumerate(lines):
+        if line.strip() == "content:":
+            insert_index = index
+            break
+    if insert_index is None:
+        lines.append(f"{field}: {value}")
+    else:
+        lines.insert(insert_index, f"{field}: {value}")
+    return "\n".join(lines)
+
+
+def find_duplicate_leaf(branch_dir: Path, title: str, content_items: list[str]) -> Path | None:
+    if not branch_dir.exists():
+        return None
+    normalized_title = title.strip().lower()
+    normalized_items = {item.strip().lower() for item in content_items if item.strip()}
+    for leaf_path in list_leaf_files(branch_dir):
+        content = read_text(leaf_path)
+        existing_title = (extract_field(content, "title") or "").strip().lower()
+        if existing_title and existing_title == normalized_title:
+            return leaf_path
+        existing_items = {
+            line[2:].strip().lower()
+            for line in content.split("\n")
+            if line.startswith("- ")
+        }
+        if normalized_items and normalized_items.issubset(existing_items):
+            return leaf_path
+    return None
+
+
+def extract_content_items(content: str) -> list[str]:
+    items = []
+    in_content = False
+    for line in content.split("\n"):
+        if line.strip() == "content:":
+            in_content = True
+            continue
+        if in_content:
+            if line.startswith("- "):
+                items.append(line[2:].strip())
+            elif line.strip() == "":
+                continue
+            else:
+                break
+    return items
+
+
+def replace_content_items(content: str, items: list[str]) -> str:
+    lines = content.split("\n")
+    new_lines = []
+    in_content = False
+    replaced = False
+    for line in lines:
+        if line.strip() == "content:":
+            in_content = True
+            replaced = True
+            new_lines.append("content:")
+            new_lines.extend([f"- {item}" for item in items])
+            continue
+        if in_content:
+            if line.startswith("- "):
+                continue
+            if line.strip() == "":
+                continue
+            in_content = False
+        if not in_content:
+            new_lines.append(line)
+    if not replaced:
+        new_lines.append("content:")
+        new_lines.extend([f"- {item}" for item in items])
+    return "\n".join(new_lines)
+
+
+def validate_status(value: str) -> str:
+    if value not in ALLOWED_STATUS:
+        raise ValueError(f"status 必须为: {', '.join(sorted(ALLOWED_STATUS))}")
+    return value
+
+
+def validate_confidence(value: str) -> str:
+    if value not in ALLOWED_CONFIDENCE:
+        raise ValueError(f"confidence 必须为: {', '.join(sorted(ALLOWED_CONFIDENCE))}")
+    return value
 
 
 def read_summary_from_index(path: Path, prefix: str, name: str) -> str | None:
@@ -357,7 +590,8 @@ def handle_query(args: argparse.Namespace) -> None:
     limit = args.limit
     root_filter = slugify(args.root) if args.root else None
     branch_filter = slugify(args.branch) if args.branch else None
-    keyword = args.keyword
+    keywords = [kw for kw in (args.keyword or []) if kw]
+    status_filter = validate_status(args.status) if args.status else None
 
     roots = list_dirs(BASE_DIR)
     if root_filter:
@@ -388,12 +622,28 @@ def handle_query(args: argparse.Namespace) -> None:
                 continue
 
             leaf_files = list_leaf_files(BASE_DIR / root / branch)
+            scored = []
             for leaf_path in leaf_files:
                 if count >= limit:
                     break
                 content = read_text(leaf_path)
-                if keyword and keyword not in content:
-                    continue
+                if status_filter:
+                    status_value = extract_field(content, "status") or "未知"
+                    if status_value != status_filter:
+                        continue
+                if keywords:
+                    keyword_score = sum(1 for kw in keywords if kw in content)
+                    if keyword_score == 0:
+                        continue
+                else:
+                    keyword_score = 0
+                status_value = extract_field(content, "status") or "未知"
+                status_rank = {"现行": 2, "未知": 1, "过期": 0}.get(status_value, 0)
+                scored.append((status_rank, keyword_score, leaf_sort_key(leaf_path), leaf_path, content))
+            scored = sorted(scored, key=lambda item: (item[0], item[1], item[2]), reverse=True)
+            for _, _, _, leaf_path, content in scored:
+                if count >= limit:
+                    break
                 leaf_id = extract_field(content, "id") or leaf_path.stem
                 title = extract_field(content, "title") or leaf_path.stem
                 status = extract_field(content, "status") or "未知"
@@ -402,6 +652,53 @@ def handle_query(args: argparse.Namespace) -> None:
                 print(
                     f"    Leaf: {leaf_id} | 标题: {title} | 状态: {status} | 可信度: {confidence} | 适用范围: {scope}"
                 )
+                count += 1
+
+
+def handle_tree(args: argparse.Namespace) -> None:
+    depth = args.depth
+    limit = args.limit
+    root_filter = slugify(args.root) if args.root else None
+    branch_filter = slugify(args.branch) if args.branch else None
+
+    roots = list_dirs(BASE_DIR)
+    if root_filter:
+        roots = [root for root in roots if root == root_filter]
+
+    count = 0
+    for root in roots:
+        if count >= limit:
+            break
+        root_summary = read_summary_from_index(BASE_DIR / "index.md", "Root", root) or root
+        print(f"Root: {root} | 摘要: {root_summary}")
+        count += 1
+        if depth <= 1 or count >= limit:
+            continue
+
+        branches = list_dirs(BASE_DIR / root)
+        if branch_filter:
+            branches = [branch for branch in branches if branch == branch_filter]
+        for branch in branches:
+            if count >= limit:
+                break
+            branch_summary = (
+                read_summary_from_index(BASE_DIR / root / "index.md", "Branch", branch) or branch
+            )
+            print(f"  Branch: {branch} | 摘要: {branch_summary}")
+            count += 1
+            if depth <= 2 or count >= limit:
+                continue
+
+            leaf_files = list_leaf_files(BASE_DIR / root / branch)
+            leaf_files = sorted(leaf_files, key=leaf_sort_key, reverse=True)
+            for leaf_path in leaf_files:
+                if count >= limit:
+                    break
+                content = read_text(leaf_path)
+                leaf_id = extract_field(content, "id") or leaf_path.stem
+                title = extract_field(content, "title") or leaf_path.stem
+                status = extract_field(content, "status") or "未知"
+                print(f"    Leaf: {leaf_id} | 标题: {title} | 状态: {status}")
                 count += 1
 
 
@@ -429,6 +726,8 @@ def build_parser() -> argparse.ArgumentParser:
     add_parser.add_argument("--scope")
     add_parser.add_argument("--source")
     add_parser.add_argument("--id")
+    add_parser.add_argument("--dedupe", action="store_true")
+    add_parser.add_argument("--merge-duplicate", action="store_true")
 
     reclassify_parser = subparsers.add_parser("reclassify")
     reclassify_parser.add_argument("--id", required=True)
@@ -440,9 +739,25 @@ def build_parser() -> argparse.ArgumentParser:
     query_parser = subparsers.add_parser("query")
     query_parser.add_argument("--root")
     query_parser.add_argument("--branch")
-    query_parser.add_argument("--keyword")
+    query_parser.add_argument("--keyword", action="append")
     query_parser.add_argument("--depth", type=int, default=1)
     query_parser.add_argument("--limit", type=int, default=20)
+    query_parser.add_argument("--status")
+
+    tree_parser = subparsers.add_parser("tree")
+    tree_parser.add_argument("--root")
+    tree_parser.add_argument("--branch")
+    tree_parser.add_argument("--depth", type=int, default=3)
+    tree_parser.add_argument("--limit", type=int, default=200)
+
+    expire_parser = subparsers.add_parser("expire")
+    expire_parser.add_argument("--id", required=True)
+    expire_parser.add_argument("--status")
+
+    prune_parser = subparsers.add_parser("prune")
+    prune_parser.add_argument("--before-days", type=int, default=30)
+    prune_parser.add_argument("--status")
+    prune_parser.add_argument("--dry-run", action="store_true")
 
     return parser
 
@@ -460,6 +775,12 @@ def main() -> None:
         handle_reclassify(args)
     elif args.command == "query":
         handle_query(args)
+    elif args.command == "tree":
+        handle_tree(args)
+    elif args.command == "expire":
+        handle_expire(args)
+    elif args.command == "prune":
+        handle_prune(args)
     else:
         parser.print_help()
         sys.exit(1)
