@@ -102,8 +102,11 @@ description: "基于 HKT 树状记忆系统的渐进式披露与主动检索指�
   - `python .trae/skills/hkt-memory/scripts/hkt_memory.py reclassify --id <leaf-id> --branch <new-branch> [--root <new-root>]`
   - `python .claude/skills/hkt-memory/scripts/hkt_memory.py reclassify --id <leaf-id> --branch <new-branch> [--root <new-root>]`
 - 渐进式检索：
-  - `python .trae/skills/hkt-memory/scripts/hkt_memory.py query --root <root> --branch <branch> --keyword <kw> --keyword <kw> --status <现行|过期|未知> --depth <1|2|3> --limit <n>`
-  - `python .claude/skills/hkt-memory/scripts/hkt_memory.py query --root <root> --branch <branch> --keyword <kw> --keyword <kw> --status <现行|过期|未知> --depth <1|2|3> --limit <n>`
+  - `python .trae/skills/hkt-memory/scripts/hkt_memory.py query --root <root> --branch <branch> --keyword <kw> --keyword <kw> --status <现行|过期|未知> --depth <1|2|3> --limit <n> --fallback-leaf-limit <n>`
+  - `python .claude/skills/hkt-memory/scripts/hkt_memory.py query --root <root> --branch <branch> --keyword <kw> --keyword <kw> --status <现行|过期|未知> --depth <1|2|3> --limit <n> --fallback-leaf-limit <n>`
+- 关键词严格匹配（不做兜底叶子展开）：
+  - `python .trae/skills/hkt-memory/scripts/hkt_memory.py query ... --strict-keyword`
+  - `python .claude/skills/hkt-memory/scripts/hkt_memory.py query ... --strict-keyword`
 - 树状可视化：
   - `python .trae/skills/hkt-memory/scripts/hkt_memory.py tree --root <root> --branch <branch> --depth <1|2|3> --limit <n>`
   - `python .claude/skills/hkt-memory/scripts/hkt_memory.py tree --root <root> --branch <branch> --depth <1|2|3> --limit <n>`

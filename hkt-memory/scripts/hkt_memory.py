@@ -80,6 +80,155 @@ def write_text(path: Path, content: str) -> None:
     path.write_text(content, encoding="utf-8")
 
 
+def list_dirs(path: Path) -> list[str]:
+    if not path.exists():
+        return []
+    return sorted(entry.name for entry in path.iterdir() if entry.is_dir())
+
+
+def list_leaf_files(path: Path) -> list[Path]:
+    if not path.exists():
+        return []
+    return sorted(
+        entry
+        for entry in path.iterdir()
+        if entry.is_file() and entry.suffix == ".md" and entry.name != "index.md"
+    )
+
+
+def parse_datetime(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value)
+    except ValueError:
+        return None
+
+
+def leaf_sort_key(leaf_path: Path) -> tuple[bool, datetime]:
+    content = read_text(leaf_path)
+    updated_at = extract_field(content, "updated_at")
+    parsed = parse_datetime(updated_at)
+    if parsed:
+        return (False, parsed)
+    created_at = extract_field(content, "created_at")
+    parsed = parse_datetime(created_at)
+    if parsed:
+        return (False, parsed)
+    return (True, datetime.utcfromtimestamp(leaf_path.stat().st_mtime))
+
+
+def upsert_field(content: str, field: str, value: str) -> str:
+    lines = content.split("\n")
+    pattern = re.compile(rf"^{re.escape(field)}:\s*.*$")
+    for index, line in enumerate(lines):
+        if pattern.match(line):
+            lines[index] = f"{field}: {value}"
+            return "\n".join(lines)
+    insert_index = None
+    for index, line in enumerate(lines):
+        if line.strip() == "content:":
+            insert_index = index
+            break
+    if insert_index is None:
+        lines.append(f"{field}: {value}")
+    else:
+        lines.insert(insert_index, f"{field}: {value}")
+    return "\n".join(lines)
+
+
+def find_duplicate_leaf(branch_dir: Path, title: str, content_items: list[str]) -> Path | None:
+    if not branch_dir.exists():
+        return None
+    normalized_title = title.strip().lower()
+    normalized_items = {item.strip().lower() for item in content_items if item.strip()}
+    for leaf_path in list_leaf_files(branch_dir):
+        content = read_text(leaf_path)
+        existing_title = (extract_field(content, "title") or "").strip().lower()
+        if existing_title and existing_title == normalized_title:
+            return leaf_path
+        existing_items = {
+            line[2:].strip().lower()
+            for line in content.split("\n")
+            if line.startswith("- ")
+        }
+        if normalized_items and normalized_items.issubset(existing_items):
+            return leaf_path
+    return None
+
+
+def extract_content_items(content: str) -> list[str]:
+    items = []
+    in_content = False
+    for line in content.split("\n"):
+        if line.strip() == "content:":
+            in_content = True
+            continue
+        if in_content:
+            if line.startswith("- "):
+                items.append(line[2:].strip())
+            elif line.strip() == "":
+                continue
+            else:
+                break
+    return items
+
+
+def replace_content_items(content: str, items: list[str]) -> str:
+    lines = content.split("\n")
+    new_lines = []
+    in_content = False
+    replaced = False
+    for line in lines:
+        if line.strip() == "content:":
+            in_content = True
+            replaced = True
+            new_lines.append("content:")
+            new_lines.extend([f"- {item}" for item in items])
+            continue
+        if in_content:
+            if line.startswith("- "):
+                continue
+            if line.strip() == "":
+                continue
+            in_content = False
+        if not in_content:
+            new_lines.append(line)
+    if not replaced:
+        new_lines.append("content:")
+        new_lines.extend([f"- {item}" for item in items])
+    return "\n".join(new_lines)
+
+
+def validate_status(value: str) -> str:
+    if value not in ALLOWED_STATUS:
+        raise ValueError(f"status 必须为: {', '.join(sorted(ALLOWED_STATUS))}")
+    return value
+
+
+def validate_confidence(value: str) -> str:
+    if value not in ALLOWED_CONFIDENCE:
+        raise ValueError(f"confidence 必须为: {', '.join(sorted(ALLOWED_CONFIDENCE))}")
+    return value
+
+
+def read_summary_from_index(path: Path, prefix: str, name: str) -> str | None:
+    content = read_text(path)
+    match = re.search(
+        rf"^- {re.escape(prefix)}: {re.escape(name)} \| Summary: (.*)$", content, re.M
+    )
+    if not match:
+        return None
+    return match.group(1).strip()
+
+
+def extract_field(content: str, field: str) -> str | None:
+    match = re.search(rf"^{re.escape(field)}:\s*(.*)$", content, re.M)
+    if not match:
+        return None
+    return match.group(1).strip()
+
+
 def update_line(lines: list[str], pattern: re.Pattern, newline: str) -> list[str]:
     for index, line in enumerate(lines):
         if pattern.match(line):
@@ -436,162 +585,16 @@ def handle_prune(args: argparse.Namespace) -> None:
         print(f"已删除 Leaf: {removed}")
 
 
-def list_dirs(path: Path) -> list[str]:
-    if not path.exists():
-        return []
-    return sorted(entry.name for entry in path.iterdir() if entry.is_dir())
-
-
-def list_leaf_files(path: Path) -> list[Path]:
-    if not path.exists():
-        return []
-    return sorted(
-        entry
-        for entry in path.iterdir()
-        if entry.is_file() and entry.suffix == ".md" and entry.name != "index.md"
-    )
-
-
-def parse_datetime(value: str | None) -> datetime | None:
-    if not value:
-        return None
-    try:
-        return datetime.fromisoformat(value)
-    except ValueError:
-        return None
-
-
-def leaf_sort_key(leaf_path: Path) -> tuple[bool, datetime]:
-    content = read_text(leaf_path)
-    updated_at = extract_field(content, "updated_at")
-    parsed = parse_datetime(updated_at)
-    if parsed:
-        return (False, parsed)
-    created_at = extract_field(content, "created_at")
-    parsed = parse_datetime(created_at)
-    if parsed:
-        return (False, parsed)
-    return (True, datetime.utcfromtimestamp(leaf_path.stat().st_mtime))
-
-
-def upsert_field(content: str, field: str, value: str) -> str:
-    lines = content.split("\n")
-    pattern = re.compile(rf"^{re.escape(field)}:\s*.*$")
-    for index, line in enumerate(lines):
-        if pattern.match(line):
-            lines[index] = f"{field}: {value}"
-            return "\n".join(lines)
-    insert_index = None
-    for index, line in enumerate(lines):
-        if line.strip() == "content:":
-            insert_index = index
-            break
-    if insert_index is None:
-        lines.append(f"{field}: {value}")
-    else:
-        lines.insert(insert_index, f"{field}: {value}")
-    return "\n".join(lines)
-
-
-def find_duplicate_leaf(branch_dir: Path, title: str, content_items: list[str]) -> Path | None:
-    if not branch_dir.exists():
-        return None
-    normalized_title = title.strip().lower()
-    normalized_items = {item.strip().lower() for item in content_items if item.strip()}
-    for leaf_path in list_leaf_files(branch_dir):
-        content = read_text(leaf_path)
-        existing_title = (extract_field(content, "title") or "").strip().lower()
-        if existing_title and existing_title == normalized_title:
-            return leaf_path
-        existing_items = {
-            line[2:].strip().lower()
-            for line in content.split("\n")
-            if line.startswith("- ")
-        }
-        if normalized_items and normalized_items.issubset(existing_items):
-            return leaf_path
-    return None
-
-
-def extract_content_items(content: str) -> list[str]:
-    items = []
-    in_content = False
-    for line in content.split("\n"):
-        if line.strip() == "content:":
-            in_content = True
-            continue
-        if in_content:
-            if line.startswith("- "):
-                items.append(line[2:].strip())
-            elif line.strip() == "":
-                continue
-            else:
-                break
-    return items
-
-
-def replace_content_items(content: str, items: list[str]) -> str:
-    lines = content.split("\n")
-    new_lines = []
-    in_content = False
-    replaced = False
-    for line in lines:
-        if line.strip() == "content:":
-            in_content = True
-            replaced = True
-            new_lines.append("content:")
-            new_lines.extend([f"- {item}" for item in items])
-            continue
-        if in_content:
-            if line.startswith("- "):
-                continue
-            if line.strip() == "":
-                continue
-            in_content = False
-        if not in_content:
-            new_lines.append(line)
-    if not replaced:
-        new_lines.append("content:")
-        new_lines.extend([f"- {item}" for item in items])
-    return "\n".join(new_lines)
-
-
-def validate_status(value: str) -> str:
-    if value not in ALLOWED_STATUS:
-        raise ValueError(f"status 必须为: {', '.join(sorted(ALLOWED_STATUS))}")
-    return value
-
-
-def validate_confidence(value: str) -> str:
-    if value not in ALLOWED_CONFIDENCE:
-        raise ValueError(f"confidence 必须为: {', '.join(sorted(ALLOWED_CONFIDENCE))}")
-    return value
-
-
-def read_summary_from_index(path: Path, prefix: str, name: str) -> str | None:
-    content = read_text(path)
-    match = re.search(
-        rf"^- {re.escape(prefix)}: {re.escape(name)} \| Summary: (.*)$", content, re.M
-    )
-    if not match:
-        return None
-    return match.group(1).strip()
-
-
-def extract_field(content: str, field: str) -> str | None:
-    match = re.search(rf"^{re.escape(field)}:\s*(.*)$", content, re.M)
-    if not match:
-        return None
-    return match.group(1).strip()
-
-
 def handle_query(args: argparse.Namespace) -> None:
     depth = args.depth
     limit = args.limit
     root_filter = slugify(args.root) if args.root else None
     branch_filter = slugify(args.branch) if args.branch else None
     keywords = [kw for kw in (args.keyword or []) if kw]
+    keywords_norm = [kw.lower() for kw in keywords]
     status_filter = validate_status(args.status) if args.status else None
+    strict_keyword = args.strict_keyword
+    fallback_leaf_limit = args.fallback_leaf_limit
 
     roots = list_dirs(BASE_DIR)
     if root_filter:
@@ -627,21 +630,37 @@ def handle_query(args: argparse.Namespace) -> None:
                 if count >= limit:
                     break
                 content = read_text(leaf_path)
+                content_lower = content.lower()
                 if status_filter:
                     status_value = extract_field(content, "status") or "未知"
                     if status_value != status_filter:
                         continue
-                if keywords:
-                    keyword_score = sum(1 for kw in keywords if kw in content)
-                    if keyword_score == 0:
-                        continue
-                else:
-                    keyword_score = 0
+                matched = [keywords[index] for index, kw in enumerate(keywords_norm) if kw in content_lower]
+                keyword_score = len(matched)
+                keyword_ratio = keyword_score / len(keywords_norm) if keywords_norm else 0
+                if keywords_norm and keyword_score == 0:
+                    continue
                 status_value = extract_field(content, "status") or "未知"
                 status_rank = {"现行": 2, "未知": 1, "过期": 0}.get(status_value, 0)
-                scored.append((status_rank, keyword_score, leaf_sort_key(leaf_path), leaf_path, content))
-            scored = sorted(scored, key=lambda item: (item[0], item[1], item[2]), reverse=True)
-            for _, _, _, leaf_path, content in scored:
+                scored.append(
+                    (status_rank, keyword_ratio, keyword_score, leaf_sort_key(leaf_path), leaf_path, content, matched, False)
+                )
+            if not scored and keywords_norm and not strict_keyword:
+                fallback_count = 0
+                for leaf_path in leaf_files:
+                    if count >= limit or fallback_count >= fallback_leaf_limit:
+                        break
+                    content = read_text(leaf_path)
+                    if status_filter:
+                        status_value = extract_field(content, "status") or "未知"
+                        if status_value != status_filter:
+                            continue
+                    status_value = extract_field(content, "status") or "未知"
+                    status_rank = {"现行": 2, "未知": 1, "过期": 0}.get(status_value, 0)
+                    scored.append((status_rank, 0, 0, leaf_sort_key(leaf_path), leaf_path, content, [], True))
+                    fallback_count += 1
+            scored = sorted(scored, key=lambda item: (item[0], item[1], item[2], item[3]), reverse=True)
+            for _, _, _, _, leaf_path, content, matched, is_fallback in scored:
                 if count >= limit:
                     break
                 leaf_id = extract_field(content, "id") or leaf_path.stem
@@ -649,8 +668,12 @@ def handle_query(args: argparse.Namespace) -> None:
                 status = extract_field(content, "status") or "未知"
                 confidence = extract_field(content, "confidence") or "中"
                 scope = extract_field(content, "scope") or "默认"
+                if is_fallback:
+                    reason = "兜底: 最新"
+                else:
+                    reason = f"命中关键词: {', '.join(matched)}" if matched else "命中关键词: -"
                 print(
-                    f"    Leaf: {leaf_id} | 标题: {title} | 状态: {status} | 可信度: {confidence} | 适用范围: {scope}"
+                    f"    Leaf: {leaf_id} | 标题: {title} | 状态: {status} | 可信度: {confidence} | 适用范围: {scope} | 线索: {reason}"
                 )
                 count += 1
 
@@ -742,7 +765,9 @@ def build_parser() -> argparse.ArgumentParser:
     query_parser.add_argument("--keyword", action="append")
     query_parser.add_argument("--depth", type=int, default=1)
     query_parser.add_argument("--limit", type=int, default=20)
+    query_parser.add_argument("--fallback-leaf-limit", type=int, default=3)
     query_parser.add_argument("--status")
+    query_parser.add_argument("--strict-keyword", action="store_true")
 
     tree_parser = subparsers.add_parser("tree")
     tree_parser.add_argument("--root")
