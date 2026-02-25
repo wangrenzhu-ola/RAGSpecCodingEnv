@@ -112,9 +112,9 @@ fi
 echo "Installing OpenSpec as a skill..."
 "${OPENSKILLS_BIN}" install "${AI_ENV_DIR}/openspec-repo" --yes
 
-if [ -d "${PROJECT_ROOT}/hkt-memory" ]; then
+if [ -d "${PROJECT_ROOT}/external/hkt-memory" ]; then
   echo "Installing local skill: hkt-memory..."
-  "${OPENSKILLS_BIN}" install "${PROJECT_ROOT}/hkt-memory" --yes
+  "${OPENSKILLS_BIN}" install "${PROJECT_ROOT}/external/hkt-memory" --yes
 fi
 
 if [ ! -d "${PROJECT_ROOT}/openspec" ]; then
