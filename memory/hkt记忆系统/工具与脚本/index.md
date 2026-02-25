@@ -7,3 +7,5 @@
 - Leaf: leaf-20260225T0644-skill-md-精简 | Title: SKILL.md 精简 | Status: 现行 | Updated: 2026-02-25T06:44:24.809805
 
 - Leaf: leaf-20260225T0728-skill-md-保留必要信息并恢复-schema | Title: SKILL.md 保留必要信息并恢复 Schema | Status: 现行 | Updated: 2026-02-25T07:28:21.164498
+
+- Leaf: leaf-20260225T0819-当前可用技能列表 | Title: 当前可用技能列表 | Status: 现行 | Updated: 2026-02-25T08:19:53.556099
