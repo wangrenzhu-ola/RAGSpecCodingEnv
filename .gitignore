@@ -12,3 +12,4 @@ package.json
 package-lock.json
 gdrive_upload
 presentation
+hkt-memory/scripts/__pycache__
