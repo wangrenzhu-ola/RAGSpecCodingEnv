@@ -5,3 +5,5 @@
 - Root: openclaw技术研究 | Summary: openclaw技术研究
 
 - Root: 测试 | Summary: 测试
+
+- Root: openspec系统 | Summary: openspec系统
