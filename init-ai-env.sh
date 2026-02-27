@@ -182,13 +182,25 @@ export_env() {
   val="$2"
   # Export for current session
   export "$key"="$val"
-  # Write to .bashrc if exists
-  if [ -f ~/.bashrc ]; then
-    # Remove existing
-    sed -i '' "/export $key=/d" ~/.bashrc
-    # Add new
-    echo "export $key=\"$val\"" >> ~/.bashrc
-  fi
+  
+  # 1. Write to project local .env
+  local env_file="${PROJECT_ROOT}/.env"
+  if [ ! -f "$env_file" ]; then touch "$env_file"; fi
+  sed -i '' "/^$key=/d" "$env_file"
+  echo "$key=\"$val\"" >> "$env_file"
+  echo "✅ Updated project .env with $key"
+
+  # 2. Determine which profile to use
+  local profiles=("$HOME/.zshrc" "$HOME/.bash_profile" "$HOME/.bashrc")
+  for profile in "${profiles[@]}"; do
+    if [ -f "$profile" ]; then
+      # Remove existing
+      sed -i '' "/export $key=/d" "$profile"
+      # Add new
+      echo "export $key=\"$val\"" >> "$profile"
+      echo "✅ Updated $profile with $key"
+    fi
+  done
 }
 
 case "$provider_choice" in
@@ -225,10 +237,33 @@ case "$provider_choice" in
     export_env "HKT_MEMORY_MODEL" "all-MiniLM-L6-v2"
     # Ensure force local
     export_env "HKT_MEMORY_FORCE_LOCAL" "true"
-    echo "✅ 本地模式已配置 (模型: all-MiniLM-L6-v2)。"
+    echo "✅ 本地模式已配置 (模型: all-MiniLM-V2)。"
     ;;
 esac
 
 echo "--------------------------------------------------------------------------------"
+echo "🔄 正在自动执行第一次同步 (hkt-memory sync)..."
+# Use the local script to perform sync
+if [ -f "hkt-memory/scripts/hkt_memory.py" ]; then
+  # Try to use current session variables
+  python3 hkt-memory/scripts/hkt_memory.py sync || echo "⚠️ 初始同步失败，请检查 API Key 后手动运行 sync。"
+fi
+
+echo "--------------------------------------------------------------------------------"
 echo "✅ AI 环境已准备就绪 🚀"
+echo "--------------------------------------------------------------------------------"
+echo ""
+echo "📌 AGENTS.md 调用规范（请手动复制到 AGENTS.md 中）"
+echo "--------------------------------------------------------------------------------"
+cat <<'EOF'
+## Workflow
+1. **Analyze**: Understand the user's request.
+2. **Check Specs**: Read `openspec/specs/` to understand current behavior.
+3. **Propose**: For non-trivial changes, create an OpenSpec proposal first.
+4. **Implement**: Implement strictly according to the agreed proposal/specs.
+5. **Archive**: After verification, archive the change so specs stay authoritative.
+6. **Memory First**: 需要查历史结论或上下文时，优先使用 hkt-memory 查询；只有在记忆不足或需要定位具体代码时才进行工作区搜索。
+7. **Memory Read**: 每轮开始前先执行 `bash .trae/skills/hkt-memory/entry.sh query --hybrid --keyword "<query>" --mmr --decay`。
+8. **Memory Write**: 每轮结束后将关键结论写入 `memory/` 并执行 `bash .trae/skills/hkt-memory/entry.sh sync`。
+EOF
 echo "--------------------------------------------------------------------------------"
