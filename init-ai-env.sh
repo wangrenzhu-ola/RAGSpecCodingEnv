@@ -1,6 +1,10 @@
 #!/bin/bash
 set -euo pipefail
 
+# Ensure proxy settings are applied (User Rule)
+export http_proxy=http://10.48.113.10:8080
+export https_proxy=http://10.48.113.10:8080
+
 echo "Initializing AI Development Environment..."
 
 PROJECT_ROOT="$(pwd)"
@@ -10,7 +14,8 @@ OPENSPEC_VERSION="1.2.0"
 
 rm -rf "${AI_ENV_DIR}"
 
-rm -rf "${PROJECT_ROOT}/.claude/skills/openspec" "${PROJECT_ROOT}/.claude/skills/OpenSpec"
+rm -rf "${PROJECT_ROOT}/.claude/skills/openspec" "${PROJECT_ROOT}/.claude/skills/OpenSpec" "${PROJECT_ROOT}/.claude/skills/openspec-repo"
+rm -rf "${PROJECT_ROOT}/.trae/skills/openspec" "${PROJECT_ROOT}/.trae/skills/OpenSpec" "${PROJECT_ROOT}/.trae/skills/openspec-repo"
 rm -rf "${PROJECT_ROOT}/.claude/skills/hkt-memory" "${PROJECT_ROOT}/.trae/skills/hkt-memory"
 
 if ! command -v node >/dev/null 2>&1; then
@@ -74,13 +79,13 @@ fi
 
 # 2. Clone OpenSpec repo and make it a skill
 echo "Cloning OpenSpec repository..."
-rm -rf "${AI_ENV_DIR}/openspec-repo"
-git clone --depth 1 --branch "v${OPENSPEC_VERSION}" https://github.com/Fission-AI/OpenSpec.git "${AI_ENV_DIR}/openspec-repo"
+rm -rf "${AI_ENV_DIR}/openspec"
+git clone --depth 1 --branch "v${OPENSPEC_VERSION}" https://github.com/Fission-AI/OpenSpec.git "${AI_ENV_DIR}/openspec"
 
 # Ensure OpenSpec has a SKILL.md (Create if missing, as it might not be in the repo root yet)
-if [ ! -f "${AI_ENV_DIR}/openspec-repo/SKILL.md" ]; then
+if [ ! -f "${AI_ENV_DIR}/openspec/SKILL.md" ]; then
   echo "Creating SKILL.md for OpenSpec..."
-  cat > "${AI_ENV_DIR}/openspec-repo/SKILL.md" <<'EOF'
+  cat > "${AI_ENV_DIR}/openspec/SKILL.md" <<'EOF'
 ---
 name: openspec
 description: Spec-driven development workflow (proposal/apply/archive) to keep requirements explicit and prevent scope drift.
@@ -112,7 +117,7 @@ EOF
 fi
 
 echo "Installing OpenSpec as a skill..."
-"${OPENSKILLS_BIN}" install "${AI_ENV_DIR}/openspec-repo" --yes
+"${OPENSKILLS_BIN}" install "${AI_ENV_DIR}/openspec" --yes
 
 if [ -d "${PROJECT_ROOT}/hkt-memory" ]; then
   echo "Installing local skill: hkt-memory..."
@@ -157,11 +162,73 @@ fi
 echo "Done."
 echo "Next: read AI_WORKFLOW_GUIDE.md"
 echo ""
-echo "⚠️ 重要：为了验证并完成环境配置，请复制以下提示词发送给你的 AI 助手："
 echo "--------------------------------------------------------------------------------"
-echo "请检查当前环境。我刚刚运行了 'init-ai-env.sh' 脚本。"
-echo "1. 验证 'AGENTS.md' 是否存在，且包含可用的技能列表（包括 OpenSpec 和 Anthropic 官方技能）。"
-echo "2. 如果 'AGENTS.md' 中缺少任何技能，请运行 'npx openskills sync' 进行更新。"
-echo "3. 确认你能看到 'openspec' 技能以及至少一个其他技能（例如 'pdf' 或 'frontend-design'）。"
-echo "4. 验证通过后，请告诉我 'AI 环境已准备就绪 🚀'。"
+echo "🔧 配置 Embedding Provider (向量模型)"
+echo "请选择要使用的 Embedding 服务提供商："
+echo "1) OpenAI (官方 API)"
+echo "2) Zhipu AI (智谱 GLM - 国内推荐 🇨🇳)"
+echo "3) Local (本地 SentenceTransformer - 免费/无网)"
+echo "--------------------------------------------------------------------------------"
+
+read -p "请输入选项 [1-3] (默认 3): " provider_choice
+
+# Default to Local (3)
+if [ -z "$provider_choice" ]; then
+  provider_choice="3"
+fi
+
+export_env() {
+  key="$1"
+  val="$2"
+  # Export for current session
+  export "$key"="$val"
+  # Write to .bashrc if exists
+  if [ -f ~/.bashrc ]; then
+    # Remove existing
+    sed -i '' "/export $key=/d" ~/.bashrc
+    # Add new
+    echo "export $key=\"$val\"" >> ~/.bashrc
+  fi
+}
+
+case "$provider_choice" in
+  1)
+    echo "👉 已选择: OpenAI"
+    read -p "请输入 OpenAI API Key: " input_key
+    if [ -n "$input_key" ]; then
+      export_env "OPENAI_API_KEY" "$input_key"
+      export_env "HKT_MEMORY_MODEL" "text-embedding-3-small"
+      # Clear Base URL to use default
+      if [ -f ~/.bashrc ]; then sed -i '' '/export OPENAI_BASE_URL=/d' ~/.bashrc; fi
+      unset OPENAI_BASE_URL
+      echo "✅ OpenAI 配置完成。"
+    else
+      echo "⚠️ 未输入 Key，回退到本地模式。"
+      export_env "HKT_MEMORY_MODEL" "all-MiniLM-L6-v2"
+    fi
+    ;;
+  2)
+    echo "👉 已选择: Zhipu AI (GLM)"
+    read -p "请输入 Zhipu API Key: " input_key
+    if [ -n "$input_key" ]; then
+      export_env "OPENAI_API_KEY" "$input_key"
+      export_env "OPENAI_BASE_URL" "https://open.bigmodel.cn/api/paas/v4/"
+      export_env "HKT_MEMORY_MODEL" "embedding-3"
+      echo "✅ Zhipu AI 配置完成 (使用 embedding-3 模型)。"
+    else
+      echo "⚠️ 未输入 Key，回退到本地模式。"
+      export_env "HKT_MEMORY_MODEL" "all-MiniLM-L6-v2"
+    fi
+    ;;
+  *)
+    echo "👉 已选择: Local (SentenceTransformer)"
+    export_env "HKT_MEMORY_MODEL" "all-MiniLM-L6-v2"
+    # Ensure force local
+    export_env "HKT_MEMORY_FORCE_LOCAL" "true"
+    echo "✅ 本地模式已配置 (模型: all-MiniLM-L6-v2)。"
+    ;;
+esac
+
+echo "--------------------------------------------------------------------------------"
+echo "✅ AI 环境已准备就绪 🚀"
 echo "--------------------------------------------------------------------------------"

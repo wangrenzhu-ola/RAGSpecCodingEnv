@@ -1,231 +1,165 @@
 ---
 name: "hkt-memory"
-description: "基于 HKT 树状记忆系统的渐进式披露与主动检索指南。所有记忆检索与写入必须通过脚本执行，并明确给出 .trae/.claude 两种路径。"
+description: "对齐 OpenClaw 的记忆系统：Tree 记忆库 + SQLite 向量/全文索引 + 混合检索（MMR/时间衰减/增强分块）。所有检索与写入通过脚本完成，并同时给出 .trae/.claude 路径。"
 ---
 
-# HKT 记忆引擎（渐进式披露）
+# hkt-memory v2（OpenClaw 对齐）
 
-## 使用场景
+## 这是什么
 
-- 当用户要求“保存记忆/写入记忆/持久化上下文/记住偏好”时调用。
-- 当任务需要长期上下文管理、跨会话追踪或避免上下文过载时调用。
-- 当需要像“先看说明书再深入细节”的方式做检索与决策时调用。
-- 当每次对话结束需要自动沉淀关键信息，并在后续对话中可检索时调用。
+- hkt-memory v2 用“Tree 记忆库 + 向量/全文索引”实现 OpenClaw 风格的记忆检索与维护：先用可控的摘要结构定位，再用混合检索在叶子级别取回最相关片段，最后按需回到树结构做验证与扩展。
 
-## 目标
+## 核心原则（必须）
 
-- 先大后小：先定位 Root（大原则），再定位 Branch（具体主题），最后精确到 Leaf（案例或事实）。
-- 主动发现：像读取 AGENTS.md 的技能说明一样，先检查是否存在相关记忆，再按需展开。
-- 控制负载：每次只加载必要层级，避免一次性拉取过多上下文。
+- 只通过脚本读写：默认不直接遍历/手改 `memory/`（需要查看某条 Leaf 原文时，用 IDE 打开文件属于“人类阅读”，但不要让 Agent 以“扫描文件夹”代替检索）。
+- 结构化优先：写入以“短标题 + 列表要点”为主，便于分块与检索；长文本会退化成固定窗口分块，效果更不可控。
+- 可维护：重复内容用 `--dedupe/--merge-duplicate`，过期内容用 `expire/prune`，索引由脚本维护。
+- 与 OpenClaw 对齐：默认支持加权混合检索、MMR 多样性重排、时间衰减、增强分块（list item 语义分块 + fixed window 兜底）。
 
-## 强制规则（必须）
+## 数据模型
 
-- 记忆检索与读取必须通过脚本执行，禁止直接读取 memory 目录。
-- 记忆写入必须通过脚本执行，禁止手工编辑 Leaf 文件。
-- 输出命令时必须同时提供两种路径：`.trae/` 与 `.claude/`，确保不同 IDE 可用。
-- 需要历史结论或上下文时必须先查询 hkt-memory，只有记忆不足或需要精准定位代码时才进行工作区搜索。
+- Tree：`memory/<root>/<branch>/<leaf>.md`，通过 `index.md` 维护 Root/Branch/Leaf 列表与摘要。
+- Index：`memory/memory.db`（SQLite），包含
+  - chunks：每个 leaf 被切成多个 chunk（语义分块或固定窗口分块）
+  - chunks_fts：FTS5 全文索引
+  - files：文件 hash，用于 `sync` 增量更新
 
-## 分类规则（必须）
-
-- Branch 只用于语义分类，不用于“来源记录”。对话轮次/日期等来源信息必须写入 `source` 字段。
-- 禁止使用泛化 Branch（例如：对话记录/临时/其他/misc/temp/conversation）。出现此类输入时必须重新分类或自动纠正。
-- 当一条记忆包含多个主题时，必须拆分为多条 Leaf，并分别写入对应 Branch（每轮最多 3 条 Leaf）。
-- 优先复用已有 Branch；只有当主题长期稳定且确实缺少分支时，才新增 Branch。
-
-## LLM 自分类输出（推荐）
-
-- 分类决策由 LLM 完成，脚本负责“落盘 + 校验 + 纠偏（拒绝泛化分支）”。
-- LLM 在写入前 SHOULD 先输出一个分类结果，再用脚本逐条写入 Leaf。
-
-分类输出建议 Schema（示意）：
-
-```json
-{
-  "root": "HKT记忆系统",
-  "root_summary": "HKT 树状记忆系统（渐进式披露 + 主动发现）",
-  "leaves": [
-    {
-      "branch": "验收与测试",
-      "branch_summary": "验收标准、测试流程与示例结果",
-      "title": "本轮对话关键记忆（hkt-memory 代码化存取）",
-      "confidence": "高",
-      "scope": "AI IDE 记忆管理",
-      "source": "conversation-YYYY-MM-DD",
-      "content": ["要点1", "要点2"]
-    }
-  ]
-}
-```
-
-## 树状结构定义
-
-- Root：高层原则/长期稳定信息，例如“产品定位”“长期偏好”“工程规范”。
-- Branch：Root 下的主题分支，例如“部署流程”“验证方式”“记忆写入策略”。
-- Leaf：具体事实/案例/一次性记录，例如“某次部署失败的原因”“某次调整后的命令”。
-
-## 存储介质与目录结构
-
-- 默认以文档化方式管理记忆，存放在仓库内的固定目录。
-- 建议目录结构（不自动创建，仅作为规范）：
-  - `memory/index.md`：Root 索引与摘要，仅包含 Root 列表与一句话说明。
-  - `memory/<root>/index.md`：Root 概要与 Branch 列表。
-  - `memory/<root>/<branch>/index.md`：Branch 概要与 Leaf 索引。
-  - `memory/<root>/<branch>/<leaf-id>.md`：具体 Leaf 记忆文档。
-- Leaf 文档必须包含最小字段：`id`、`title`、`content`、`source`、`created_at`、`status`。
-
-## 代码化存取方式
-
-- 使用脚本统一写入与检索，路径必须同时给出：
-  - Trae：`.trae/skills/hkt-memory/scripts/hkt_memory.py`
-  - Claude：`.claude/skills/hkt-memory/scripts/hkt_memory.py`
-- 统一入口（自动识别 .trae/.claude）：
-  - `bash .trae/skills/hkt-memory/entry.sh <command> [args...]`
-  - `bash .claude/skills/hkt-memory/entry.sh <command> [args...]`
-- 可选环境变量：
-  - `HKT_MEMORY_DIR=/path/to/memory` 用于指定 memory 目录位置
-- 初始化索引：
-  - `python .trae/skills/hkt-memory/scripts/hkt_memory.py init`
-  - `python .claude/skills/hkt-memory/scripts/hkt_memory.py init`
-- 分类建议（用于渐进式披露写入前的 Root/Branch 选择）：
-  - `python .trae/skills/hkt-memory/scripts/hkt_memory.py suggest --root <root> --title <title> --content <item>`
-  - `python .claude/skills/hkt-memory/scripts/hkt_memory.py suggest --root <root> --title <title> --content <item>`
-- 写入 Leaf：
-  - `python .trae/skills/hkt-memory/scripts/hkt_memory.py add --root <root> --branch <branch> --title <title> --content <item>`
-  - `python .claude/skills/hkt-memory/scripts/hkt_memory.py add --root <root> --branch <branch> --title <title> --content <item>`
-  - 可选参数：`--root-summary` `--branch-summary` `--auto-classify` `--status` `--confidence` `--scope` `--source` `--id`
-- 去重写入：
-  - `python .trae/skills/hkt-memory/scripts/hkt_memory.py add ... --dedupe`
-  - `python .claude/skills/hkt-memory/scripts/hkt_memory.py add ... --dedupe`
-- 合并重复：
-  - `python .trae/skills/hkt-memory/scripts/hkt_memory.py add ... --merge-duplicate`
-  - `python .claude/skills/hkt-memory/scripts/hkt_memory.py add ... --merge-duplicate`
-- 重新归类（用于修复错误分类，避免污染知识库）：
-  - `python .trae/skills/hkt-memory/scripts/hkt_memory.py reclassify --id <leaf-id> --branch <new-branch> [--root <new-root>]`
-  - `python .claude/skills/hkt-memory/scripts/hkt_memory.py reclassify --id <leaf-id> --branch <new-branch> [--root <new-root>]`
-- 渐进式检索：
-  - `python .trae/skills/hkt-memory/scripts/hkt_memory.py query --root <root> --branch <branch> --keyword <kw> --keyword <kw> --status <现行|过期|未知> --depth <1|2|3> --limit <n> --fallback-leaf-limit <n>`
-  - `python .claude/skills/hkt-memory/scripts/hkt_memory.py query --root <root> --branch <branch> --keyword <kw> --keyword <kw> --status <现行|过期|未知> --depth <1|2|3> --limit <n> --fallback-leaf-limit <n>`
-- 关键词严格匹配（不做兜底叶子展开）：
-  - `python .trae/skills/hkt-memory/scripts/hkt_memory.py query ... --strict-keyword`
-  - `python .claude/skills/hkt-memory/scripts/hkt_memory.py query ... --strict-keyword`
-- 树状可视化：
-  - `python .trae/skills/hkt-memory/scripts/hkt_memory.py tree --root <root> --branch <branch> --depth <1|2|3> --limit <n>`
-  - `python .claude/skills/hkt-memory/scripts/hkt_memory.py tree --root <root> --branch <branch> --depth <1|2|3> --limit <n>`
-- 标记过期：
-  - `python .trae/skills/hkt-memory/scripts/hkt_memory.py expire --id <leaf-id> --status <过期|现行>`
-  - `python .claude/skills/hkt-memory/scripts/hkt_memory.py expire --id <leaf-id> --status <过期|现行>`
-- 清理过期：
-  - `python .trae/skills/hkt-memory/scripts/hkt_memory.py prune --before-days <n> --status <过期|现行|未知> --dry-run`
-  - `python .claude/skills/hkt-memory/scripts/hkt_memory.py prune --before-days <n> --status <过期|现行|未知> --dry-run`
-
-## 默认分类建议（HKT记忆系统 Root）
-
-- Root：HKT记忆系统
-  - Branch：验收与测试（验收标准、测试流程、示例结果）
-  - Branch：工具与脚本（CLI/脚本实现、命令使用）
-  - Branch：存储结构（目录结构、索引文件）
-  - Branch：检索与披露（depth/limit、渐进式披露策略）
-  - Branch：格式与约束（字段模板、冲突处理、规范化输出）
-  - Branch：知识管理（分类、裁剪、归档与维护）
-
-## 对话结束自动写入流程
-
-1. 汇总本轮对话的关键信息，只保留可复用与可验证的事实或规则。
-2. 将信息映射到 Root/Branch/Leaf：
-   - Root：高层稳定主题
-   - Branch：单一话题分支
-   - Leaf：本轮新增事实/规则/结论
-3. 对 Leaf 执行“稳定性评估”：
-   - 若为短期、一次性、不可复用信息，则不写入。
-   - 若为可复用规则或高价值事实，则写入。
-4. 冲突合并：
-   - 与现有 Leaf 冲突时保留双版本，并标注“现行/过期”。
-5. 生成最小记忆记录集：
-   - 每轮写入不超过 3 条 Leaf。
-
-## 存储与命名规范
-
-- 记忆以树状结构组织，Root/Branch/Leaf 必须具有稳定的唯一标识。
-- Root 使用语义稳定、可长期复用的名称。
-- Branch 聚焦单一主题，避免把多个主题混在同一分支。
-- Leaf 描述必须可验证、可追溯，尽量包含来源或上下文锚点。
-- Leaf 文件名使用 `leaf-YYYYMMDD-HHMM-<slug>.md`，确保可追踪与去重。
-
-## 渐进式披露检索流程
-
-1. 识别用户意图并归类到 Root（若不确定，创建候选 Root 列表并选择最匹配项）。
-2. 仅加载 Root 摘要，判断是否需要展开 Branch。
-3. 仅加载相关 Branch 摘要，判断是否需要展开 Leaf。
-4. 仅在明确需要细节时加载 Leaf，使用最小必要集合返回答案。
-
-## 记忆检索与调用流程
-
-1. 先检索 Root 索引：
-   - 若匹配到高置信 Root，仅加载该 Root 摘要。
-   - 若无匹配，创建候选 Root 并记录为候选，不直接写入。
-2. 再检索 Branch：
-   - 仅展开与当前任务高度相关的 Branch 摘要。
-3. 最后检索 Leaf：
-   - 仅加载与当前问题直接相关的 Leaf。
-4. 输出顺序：
-   - 先输出 Root 结论，再输出 Branch 与 Leaf 细节。
-
-## 记忆文档模板
+Leaf 最小字段（脚本会写入/更新）：
 
 ```text
-id: <leaf-id>
-title: <简短标题>
-status: <现行|过期>
-confidence: <高|中|低>
-scope: <适用范围>
-created_at: <ISO8601>
-updated_at: <ISO8601>
-source: <对话轮次或文件路径>
+id: <leaf-id>                 # 默认自动生成；可用 --id 指定
+title: <短标题>               # 必填
+status: <现行|过期|未知>       # 默认: 现行
+confidence: <高|中|低>         # 默认: 中
+scope: <适用范围>              # 默认: 默认
+created_at: <ISO8601>          # 自动生成
+updated_at: <ISO8601>          # 发生合并/变更时更新
+source: <来源锚点>             # 必填：conversation-YYYY-MM-DD 或 文件路径
 content:
   - <要点1>
   - <要点2>
 ```
 
-## 主动发现规则
+## 检索策略（OpenClaw 风格）
 
-- 优先查 Root 与 Branch 的索引摘要，而不是直接读取 Leaf。
-- 当用户提到稳定偏好/长期规则/跨会话信息时，必须先查 Root。
-- 当 Root 匹配度不足时，再扩展到相邻 Root 或创建新 Root。
+优先级从高到低：
 
-## 记忆写入规则
+1. 混合检索（推荐）：当目标是“找结论/找片段/跨 Root 语义相关”时，先 `sync`，再 `query --hybrid`。
+2. 树检索（可控披露）：当需要“理解有哪些 Root/Branch/最新叶子”或混合检索不可用时，用 `query/tree` 逐层展开（depth 1→2→3）。
+3. 精确过滤：用 `--root/--branch/--status/--strict-keyword` 收敛范围，避免兜底返回过多无关叶子。
 
-- 只有在信息稳定、可复用、对后续任务有价值时写入 Leaf。
-- 写入 Leaf 时必须关联 Root 与 Branch，避免“孤立记忆”。
-- 冲突处理：若新信息与旧 Leaf 冲突，保留两条并标注“现行/过期”，或合并为新的 Leaf，旧 Leaf 标为过期。
-- 可选去重：写入时可使用 `--dedupe` 自动检测标题或内容重复并跳过写入。
+混合检索能力：
 
-## 记忆评估标准
+- 加权混合：`score = vector_score*vector_weight + text_score*text_weight`
+- MMR：降低重复 chunk，提升多样性（适合探索性问题）
+- 时间衰减：优先近期更新（适合“系统现状/最近决策”）
+- 增强分块：优先用 `content:` 下每条 `- item` 作为语义 chunk；无 items 则对正文做 fixed window（2048/overlap 200）
 
-- 价值：能显著提升后续任务效率或决策质量。
-- 稳定：预计在多轮对话中保持有效。
-- 可验证：来源清晰，能追溯上下文或依据。
-- 可重用：在不同任务中仍然适用。
+## 写入与归类规则（必须）
 
-## 记忆选择与裁剪
+- Branch 只做语义分类；来源写在 `source`，不要把“对话/日期”当 Branch。
+- 禁止泛化 Branch：`对话记录/临时/其他/misc/temp/conversation`（脚本会拦截或回退建议分支）。
+- 一条 Leaf 只承载一个主题；跨主题拆分为多条 Leaf（建议每轮最多 3 条）。
+- 优先复用已有 Root/Branch；只有稳定且长期会复用的主题才新增 Root/Branch。
 
-- 优先返回最近更新且与当前任务高度相关的 Leaf。
-- 对过期或低价值 Leaf 做归档或合并，保持树的可用性。
-- 不允许一次性展开多个 Root 的全部 Branch 或 Leaf。
+建议的“写入前分类输出”（给 LLM 自己用的结构）：
 
-## 输出行为
+```json
+{
+  "root": "HKT记忆系统",
+  "branch": "工具与脚本",
+  "title": "hkt-memory v2 的检索与写入约束",
+  "status": "现行",
+  "confidence": "高",
+  "scope": "本仓库 AI IDE 工作流",
+  "source": "conversation-YYYY-MM-DD",
+  "content": [
+    "检索/写入通过 entry.sh 或 hkt_memory.py",
+    "混合检索需先 sync 生成 memory/memory.db"
+  ]
+}
+```
 
-- 回答前先简述 Root 层结论，再补充 Branch 与 Leaf 的必要细节。
-- 用户未要求细节时，保持 Root 层输出即可。
-- 用户要求证据或可执行步骤时，再展开 Leaf。
+## 命令速查（同时给出 .trae/.claude）
 
-## 输出格式模板
+统一入口（自动识别 .trae/.claude）：
 
-- Root: <名称> | 摘要: <一句话原则>
-  - Branch: <名称> | 摘要: <一句话主题>
-    - Leaf: <事实/规则> | 可信度: <高/中/低> | 适用范围: <范围>
+```bash
+bash .trae/skills/hkt-memory/entry.sh <command> [args...]
+bash .claude/skills/hkt-memory/entry.sh <command> [args...]
+```
 
-## 示例（简要）
+初始化索引：
 
-- Root：部署与交付
-  - Branch：阿里云部署流程
-    - Leaf：docker compose -f docker-compose.prod.yml up -d --build --remove-orphans
+```bash
+python .trae/skills/hkt-memory/scripts/hkt_memory.py init
+python .claude/skills/hkt-memory/scripts/hkt_memory.py init
+```
+
+写入 Leaf（可多次传 `--content`）：
+
+```bash
+python .trae/skills/hkt-memory/scripts/hkt_memory.py add --root <root> --branch <branch> --title <title> --content <item> --source <source>
+python .claude/skills/hkt-memory/scripts/hkt_memory.py add --root <root> --branch <branch> --title <title> --content <item> --source <source>
+```
+
+分类建议（从 taxonomy 猜测 branch）：
+
+```bash
+python .trae/skills/hkt-memory/scripts/hkt_memory.py suggest --root <root> --title <title> --content <item>
+python .claude/skills/hkt-memory/scripts/hkt_memory.py suggest --root <root> --title <title> --content <item>
+```
+
+树检索（depth 1/2/3 控制披露）：
+
+```bash
+python .trae/skills/hkt-memory/scripts/hkt_memory.py query --depth 1 --limit 20
+python .claude/skills/hkt-memory/scripts/hkt_memory.py query --root <root> --branch <branch> --keyword <kw> --depth 3 --limit 50
+```
+
+向量索引同步（生成/更新 `memory/memory.db`）：
+
+```bash
+python .trae/skills/hkt-memory/scripts/hkt_memory.py sync
+python .claude/skills/hkt-memory/scripts/hkt_memory.py sync
+```
+
+混合检索（需要先 sync）：
+
+```bash
+python .trae/skills/hkt-memory/scripts/hkt_memory.py query --hybrid --keyword "<query>" --limit 10
+python .claude/skills/hkt-memory/scripts/hkt_memory.py query --hybrid --keyword "<query>" --mmr --decay --limit 10
+```
+
+维护：
+
+```bash
+python .trae/skills/hkt-memory/scripts/hkt_memory.py reclassify --id <leaf-id> --branch <new-branch> --root <new-root>
+python .claude/skills/hkt-memory/scripts/hkt_memory.py expire --id <leaf-id> --status 过期
+python .trae/skills/hkt-memory/scripts/hkt_memory.py prune --before-days 90 --status 过期 --dry-run
+```
+
+## 配置与故障排查
+
+- 记忆目录：`HKT_MEMORY_DIR=/path/to/memory`（默认 `./memory`）
+- 智谱 GLM Embedding（与你截图一致）的环境变量示例：
+
+```bash
+export OPENAI_BASE_URL="https://open.bigmodel.cn/api/paas/v4"
+export OPENAI_API_KEY="<你的 bigmodel token>"
+export HKT_MEMORY_MODEL="embedding-3"
+```
+
+- 常见误配：`OPENAI_BASE_URL` 指向本地 `http://127.0.0.1:8000/v1` 这类非 embeddings 服务，会导致 POST 报 501/HTML 错误
+- 混合检索失败且报 embedding 错误时：
+  - 优先切到本地 embedding：`export HKT_MEMORY_FORCE_LOCAL=true`（需要安装 `sentence-transformers` 并可用 `HKT_MEMORY_MODEL` 指定模型名）
+  - 或修正远端 embedding 配置：`OPENAI_API_KEY` / `OPENAI_BASE_URL` / `HKT_MEMORY_MODEL`
+- 报 `Memory database not found. Please run 'sync' first.`：先执行 `sync` 生成 `memory/memory.db`
+- 需要“严格命中关键词”时：在非 hybrid `query` 加 `--strict-keyword`（否则会触发“兜底: 最新”）
+
+## 对话结束的最小写入流程
+
+1. 用 1-2 句话总结本轮可复用结论（可验证、可长期复用）。
+2. 为每条结论选 Root/Branch，并写成 `content:` 的 1-5 个要点。
+3. `add` 写入；疑似重复用 `--dedupe` 或 `--merge-duplicate`。
+4. 若依赖混合检索：写入后执行 `sync`（或在维护/清理后统一 sync）。

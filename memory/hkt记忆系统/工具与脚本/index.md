@@ -11,3 +11,9 @@
 - Leaf: leaf-20260225T0819-当前可用技能列表 | Title: 当前可用技能列表 | Status: 现行 | Updated: 2026-02-25T08:19:53.556099
 
 - Leaf: leaf-20260227T0332-更新-init-ai-env-sh-安装-openspec-1-2-与刷新-hkt-memory | Title: 更新 init-ai-env.sh 安装 OpenSpec 1.2 与刷新 hkt-memory | Status: 现行 | Updated: 2026-02-27T03:32:23.357990
+
+- Leaf: leaf-20260227T0603-修复-init-ai-env-sh-openspec-安装逻辑 | Title: 修复 init-ai-env.sh OpenSpec 安装逻辑 | Status: 现行 | Updated: 2026-02-27T06:03:43.369052
+
+- Leaf: leaf-20260227T0612-hkt-memory-v2-重构完成 | Title: HKT-Memory v2 重构完成 | Status: 现行 | Updated: 2026-02-27T06:12:48.697885
+
+- Leaf: leaf-20260227T0629-hkt-memory-v2-skill-md-重写-openclaw-对齐 | Title: hkt-memory v2 SKILL.md 重写（OpenClaw 对齐） | Status: 现行 | Updated: 2026-02-27T06:29:31.760003

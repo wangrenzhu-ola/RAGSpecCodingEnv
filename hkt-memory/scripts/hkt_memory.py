@@ -2,8 +2,20 @@ import argparse
 import os
 import re
 import sys
+import hashlib
 from datetime import datetime
 from pathlib import Path
+
+# Add script directory to sys.path to allow importing sibling modules
+SCRIPT_DIR = Path(__file__).parent.absolute()
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.append(str(SCRIPT_DIR))
+
+try:
+    from vector_store import VectorStore
+except ImportError:
+    VectorStore = None
+    print("Warning: vector_store module not found. Vector search capabilities will be disabled.")
 
 BASE_DIR = Path(os.environ.get("HKT_MEMORY_DIR", Path.cwd() / "memory"))
 
@@ -583,9 +595,238 @@ def handle_prune(args: argparse.Namespace) -> None:
         print("dry-run 完成")
     else:
         print(f"已删除 Leaf: {removed}")
+        # Automatically sync to vector store to reflect deletions
+        if VectorStore:
+            print("Auto-syncing vector store...")
+            handle_sync(args)
+
+
+def chunk_fixed_window(text: str, window_size: int = 2048, overlap: int = 200) -> list[str]:
+    """Split text into fixed-size chunks with overlap."""
+    if len(text) <= window_size:
+        return [text]
+    
+    chunks = []
+    start = 0
+    while start < len(text):
+        end = start + window_size
+        chunk = text[start:end]
+        chunks.append(chunk)
+        start += (window_size - overlap)
+    return chunks
+
+def handle_sync(args: argparse.Namespace) -> None:
+    if VectorStore is None:
+        print("VectorStore not available.")
+        return
+
+    if not BASE_DIR.exists():
+        print("memory directory not found.")
+        return
+
+    db_path = BASE_DIR / "memory.db"
+    store = VectorStore(str(db_path))
+    
+    print(f"Syncing memory to vector store: {db_path}")
+
+    # Get existing file hashes
+    cursor = store.conn.cursor()
+    cursor.execute("SELECT path, hash FROM files")
+    db_files = {row['path']: row['hash'] for row in cursor.fetchall()}
+    
+    current_files = set()
+    processed_count = 0
+    skipped_count = 0
+    
+    # Traverse memory directory
+    for root_dir in list_dirs(BASE_DIR):
+        root_path = BASE_DIR / root_dir
+        for branch_dir in list_dirs(root_path):
+            branch_path = root_path / branch_dir
+            for leaf_path in list_leaf_files(branch_path):
+                try:
+                    rel_path = str(leaf_path.relative_to(BASE_DIR))
+                    current_files.add(rel_path)
+                    
+                    content_text = read_text(leaf_path)
+                    current_hash = hashlib.sha256(content_text.encode('utf-8')).hexdigest()
+                    
+                    # Check if changed
+                    if rel_path in db_files and db_files[rel_path] == current_hash:
+                        skipped_count += 1
+                        continue
+                    
+                    print(f"  Ingesting: {rel_path}")
+                    
+                    # Extract structured items first
+                    items = extract_content_items(content_text)
+                    
+                    # Extract metadata
+                    leaf_id = extract_field(content_text, "id") or leaf_path.stem
+                    title = extract_field(content_text, "title") or leaf_path.stem
+                    status = extract_field(content_text, "status") or "未知"
+                    updated_at_iso = extract_field(content_text, "updated_at")
+                    updated_at_ts = int(parse_datetime(updated_at_iso).timestamp()) if updated_at_iso else int(leaf_path.stat().st_mtime)
+                    
+                    chunks_to_add = []
+                    
+                    if items:
+                        # Use Semantic Chunking (Title + Item)
+                        for i, item in enumerate(items):
+                            chunks_to_add.append({
+                                "id": f"{leaf_id}_{i}",
+                                "content": f"{title}\n{item}",
+                                "meta_type": "semantic"
+                            })
+                    else:
+                        # Fallback: Use Fixed Window Chunking on full content (minus header fields if possible)
+                        # For simplicity, we chunk the content part
+                        body_start = content_text.find("content:")
+                        body = content_text[body_start + 8:].strip() if body_start != -1 else content_text
+                        if not body:
+                            body = content_text # Use full text if no content block found
+                        
+                        windows = chunk_fixed_window(body)
+                        for i, window in enumerate(windows):
+                            chunks_to_add.append({
+                                "id": f"{leaf_id}_win_{i}",
+                                "content": f"{title}\n{window}",
+                                "meta_type": "fixed_window"
+                            })
+
+                    # Delete old chunks
+                    store.delete_file_chunks(rel_path)
+                    
+                    # Add new chunks
+                    for chunk in chunks_to_add:
+                        meta = {
+                            "leaf_id": leaf_id,
+                            "root": root_dir,
+                            "branch": branch_dir,
+                            "title": title,
+                            "status": status,
+                            "source_file": rel_path,
+                            "chunk_type": chunk["meta_type"]
+                        }
+                        store.add_chunk(chunk["id"], rel_path, chunk["content"], meta, updated_at=updated_at_ts)
+
+                    # Update files table
+                    cursor.execute("INSERT OR REPLACE INTO files (path, hash, mtime) VALUES (?, ?, ?)", 
+                                   (rel_path, current_hash, int(leaf_path.stat().st_mtime)))
+                    store.conn.commit()
+                    processed_count += 1
+                    
+                except Exception as e:
+                    print(f"Error processing {leaf_path}: {e}")
+
+    # Cleanup deleted files
+    removed_count = 0
+    for db_path in list(db_files.keys()):
+        if db_path not in current_files:
+            print(f"  Removing: {db_path}")
+            store.delete_file_chunks(db_path)
+            cursor.execute("DELETE FROM files WHERE path = ?", (db_path,))
+            store.conn.commit()
+            removed_count += 1
+            
+    print(f"Sync complete. Processed: {processed_count}, Skipped: {skipped_count}, Removed: {removed_count}")
 
 
 def handle_query(args: argparse.Namespace) -> None:
+    if args.hybrid:
+        if VectorStore is None:
+            print("Error: VectorStore module not available. Cannot perform hybrid search.")
+            return
+
+        db_path = BASE_DIR / "memory.db"
+        if not db_path.exists():
+            print("Error: Memory database not found. Please run 'sync' first.")
+            return
+
+        query_text = " ".join(args.keyword or [])
+        if not query_text.strip():
+            print("Error: --keyword required for hybrid search.")
+            return
+
+        print(f"Executing Hybrid Search for: '{query_text}'")
+        store = VectorStore(str(db_path))
+        
+        try:
+            results = store.hybrid_search(
+                query_text, 
+                limit=args.limit,
+                vector_weight=args.vector_weight,
+                text_weight=args.text_weight,
+                mmr_enabled=args.mmr,
+                mmr_lambda=args.mmr_lambda,
+                decay_enabled=args.decay,
+                decay_days=args.decay_days
+            )
+        except Exception as e:
+            print(f"Error during hybrid search: {e}")
+            import traceback
+            traceback.print_exc()
+            return
+
+        if not results:
+            print("No results found.")
+            return
+
+        # Group by Leaf ID for better display
+        grouped_results = {}
+        for item in results:
+            meta = item.get('metadata', {})
+            leaf_id = meta.get('leaf_id')
+            if not leaf_id:
+                # Fallback for items without metadata
+                leaf_id = item.get('id')
+            
+            if leaf_id not in grouped_results:
+                grouped_results[leaf_id] = {
+                    'meta': meta,
+                    'chunks': [],
+                    'max_score': 0.0
+                }
+            
+            score = item.get('score', 0.0)
+            grouped_results[leaf_id]['chunks'].append(item)
+            if score > grouped_results[leaf_id]['max_score']:
+                grouped_results[leaf_id]['max_score'] = score
+
+        # Sort leaves by max score
+        sorted_leaves = sorted(grouped_results.values(), key=lambda x: x['max_score'], reverse=True)
+
+        for leaf_data in sorted_leaves:
+            meta = leaf_data['meta']
+            chunks = leaf_data['chunks']
+            
+            root = meta.get('root', 'Unknown Root')
+            branch = meta.get('branch', 'Unknown Branch')
+            title = meta.get('title', 'Untitled')
+            status = meta.get('status', 'Unknown')
+            leaf_id = meta.get('leaf_id', 'Unknown ID')
+            
+            print(f"Root: {root} | Branch: {branch}")
+            print(f"  Leaf: {leaf_id} | Title: {title} | Status: {status}")
+            
+            # Display relevant chunks
+            seen_content = set()
+            for chunk in chunks:
+                content = chunk.get('content', '').strip()
+                # Remove title from content if it's prepended (simple check)
+                if title and content.startswith(title):
+                    content = content[len(title):].strip()
+                
+                if content not in seen_content:
+                    score = chunk.get('score', 0.0)
+                    decay_factor = chunk.get('decay_factor')
+                    decay_info = f" | Decay: {decay_factor:.2f}" if decay_factor else ""
+                    print(f"    - {content} (Score: {score:.4f}{decay_info})")
+                    seen_content.add(content)
+            print()
+        
+        return
+
     depth = args.depth
     limit = args.limit
     root_filter = slugify(args.root) if args.root else None
@@ -768,6 +1009,16 @@ def build_parser() -> argparse.ArgumentParser:
     query_parser.add_argument("--fallback-leaf-limit", type=int, default=3)
     query_parser.add_argument("--status")
     query_parser.add_argument("--strict-keyword", action="store_true")
+    query_parser.add_argument("--hybrid", action="store_true", help="Use hybrid vector+keyword search")
+    # New hybrid params
+    query_parser.add_argument("--vector-weight", type=float, default=0.7)
+    query_parser.add_argument("--text-weight", type=float, default=0.3)
+    query_parser.add_argument("--mmr", action="store_true")
+    query_parser.add_argument("--mmr-lambda", type=float, default=0.7)
+    query_parser.add_argument("--decay", action="store_true")
+    query_parser.add_argument("--decay-days", type=float, default=30.0)
+
+    sync_parser = subparsers.add_parser("sync")
 
     tree_parser = subparsers.add_parser("tree")
     tree_parser.add_argument("--root")
@@ -806,6 +1057,8 @@ def main() -> None:
         handle_expire(args)
     elif args.command == "prune":
         handle_prune(args)
+    elif args.command == "sync":
+        handle_sync(args)
     else:
         parser.print_help()
         sys.exit(1)
