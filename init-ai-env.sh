@@ -6,10 +6,12 @@ echo "Initializing AI Development Environment..."
 PROJECT_ROOT="$(pwd)"
 AI_ENV_DIR="${PROJECT_ROOT}/.ai-env"
 SKILLS_SRC_DIR="${AI_ENV_DIR}/skills-src"
+OPENSPEC_VERSION="1.2.0"
 
 rm -rf "${AI_ENV_DIR}"
 
 rm -rf "${PROJECT_ROOT}/.claude/skills/openspec" "${PROJECT_ROOT}/.claude/skills/OpenSpec"
+rm -rf "${PROJECT_ROOT}/.claude/skills/hkt-memory" "${PROJECT_ROOT}/.trae/skills/hkt-memory"
 
 if ! command -v node >/dev/null 2>&1; then
   echo "Node.js is required but was not found in PATH."
@@ -33,7 +35,7 @@ if [ ! -f "${AI_ENV_DIR}/package.json" ]; then
 EOF
 fi
 
-(cd "${AI_ENV_DIR}" && npm install --save-dev openskills @fission-ai/openspec)
+(cd "${AI_ENV_DIR}" && npm install --save-dev openskills "@fission-ai/openspec@^${OPENSPEC_VERSION}")
 
 OPENSKILLS_BIN="${AI_ENV_DIR}/node_modules/.bin/openskills"
 OPENSPEC_BIN="${AI_ENV_DIR}/node_modules/.bin/openspec"
@@ -73,7 +75,7 @@ fi
 # 2. Clone OpenSpec repo and make it a skill
 echo "Cloning OpenSpec repository..."
 rm -rf "${AI_ENV_DIR}/openspec-repo"
-git clone https://github.com/Fission-AI/OpenSpec.git "${AI_ENV_DIR}/openspec-repo"
+git clone --depth 1 --branch "v${OPENSPEC_VERSION}" https://github.com/Fission-AI/OpenSpec.git "${AI_ENV_DIR}/openspec-repo"
 
 # Ensure OpenSpec has a SKILL.md (Create if missing, as it might not be in the repo root yet)
 if [ ! -f "${AI_ENV_DIR}/openspec-repo/SKILL.md" ]; then
