@@ -59,13 +59,6 @@ sequenceDiagram
   Agent->>User: 输出高相关上下文
 ```
 
-## 推荐发布文案
-
-HKT-memory v2 发布说明  
-本版本对齐 OpenClaw 记忆系统：Markdown 作为真实记忆源，SQLite 作为索引层；混合检索、MMR 多样性重排、时间衰减全部一致。  
-这是同宗同源、架构一致、能力一致的实现。  
-提示：如需使用外部 Embedding，请先配置 API Key。  
-欢迎大家体验与分享。
 
 ## 使用效果
 
