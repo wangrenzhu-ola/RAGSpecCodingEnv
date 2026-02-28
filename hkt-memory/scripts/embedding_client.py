@@ -51,9 +51,9 @@ class EmbeddingClient:
             import hashlib
             h = hashlib.sha256(text.encode('utf-8')).digest()
             # Return 384 dimensions (standard for small models)
-            # Or 1024 for embedding-3 if needed, but 384 is safer for local fallback
+            # Or 2048 for embedding-3 if needed (Zhipu embedding-3 is 2048)
             vec = []
-            dim = 1024 if self.model == "embedding-3" else 384
+            dim = 2048 if self.model == "embedding-3" else 384
             for i in range(dim):
                 # Use bytes to generate float between -1 and 1
                 b = h[i % 32]
