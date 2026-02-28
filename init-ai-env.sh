@@ -127,10 +127,21 @@ elif [ -d "${PROJECT_ROOT}/external/hkt-memory" ]; then
   "${OPENSKILLS_BIN}" install "${PROJECT_ROOT}/external/hkt-memory" --yes
 fi
 
-if [ -d "${PROJECT_ROOT}/.claude/skills/hkt-memory" ]; then
-  rm -rf "${PROJECT_ROOT}/.trae/skills/hkt-memory"
+# Sync ALL installed skills from .claude/skills to .trae/skills
+if [ -d "${PROJECT_ROOT}/.claude/skills" ]; then
+  echo "Syncing all skills from .claude/skills to .trae/skills..."
   mkdir -p "${PROJECT_ROOT}/.trae/skills"
-  cp -R "${PROJECT_ROOT}/.claude/skills/hkt-memory" "${PROJECT_ROOT}/.trae/skills/hkt-memory"
+  
+  for skill_path in "${PROJECT_ROOT}/.claude/skills"/*; do
+    if [ -d "$skill_path" ]; then
+      skill_name=$(basename "$skill_path")
+      # Skip if strictly internal or ignored (optional)
+      
+      echo "Syncing skill: $skill_name"
+      rm -rf "${PROJECT_ROOT}/.trae/skills/$skill_name"
+      cp -R "$skill_path" "${PROJECT_ROOT}/.trae/skills/$skill_name"
+    fi
+  done
 fi
 
 if [ ! -d "${PROJECT_ROOT}/openspec" ]; then
