@@ -4,6 +4,7 @@ import os
 import re
 import math
 import numpy as np
+import sys
 from typing import List, Dict, Optional, Tuple, Any
 from pathlib import Path
 from datetime import datetime
@@ -45,7 +46,7 @@ class VectorStore:
         """)
 
         # Chunks table with embedding stored as JSON for portability
-        # We can switch to BLOB for performance later
+        # Updated to include start_line and end_line for OpenClaw alignment
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS chunks (
                 id TEXT PRIMARY KEY,
@@ -53,12 +54,21 @@ class VectorStore:
                 content TEXT NOT NULL,
                 embedding TEXT, -- JSON array
                 metadata TEXT, -- JSON object
+                start_line INTEGER,
+                end_line INTEGER,
                 updated_at INTEGER NOT NULL
             );
         """)
 
+        # Check if start_line/end_line columns exist (for migration)
+        cursor.execute("PRAGMA table_info(chunks)")
+        columns = [row['name'] for row in cursor.fetchall()]
+        if 'start_line' not in columns:
+            print("Migrating schema: Adding start_line/end_line columns...")
+            cursor.execute("ALTER TABLE chunks ADD COLUMN start_line INTEGER")
+            cursor.execute("ALTER TABLE chunks ADD COLUMN end_line INTEGER")
+
         # FTS5 table for keyword search
-        # Note: 'content' column in FTS5 is special
         cursor.execute("""
             CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(
                 content,
@@ -86,7 +96,9 @@ class VectorStore:
 
         self.conn.commit()
 
-    def add_chunk(self, chunk_id: str, file_path: str, content: str, metadata: Dict[str, Any] = None, updated_at: int = None):
+    def add_chunk(self, chunk_id: str, file_path: str, content: str, 
+                  start_line: int, end_line: int,
+                  metadata: Dict[str, Any] = None, updated_at: int = None):
         if metadata is None:
             metadata = {}
         
@@ -103,15 +115,15 @@ class VectorStore:
         if updated_at is None:
             # Use current time
             cursor.execute("""
-                INSERT OR REPLACE INTO chunks (id, file_path, content, embedding, metadata, updated_at)
-                VALUES (?, ?, ?, ?, ?, strftime('%s', 'now'))
-            """, (chunk_id, file_path, content, embedding_json, json.dumps(metadata)))
+                INSERT OR REPLACE INTO chunks (id, file_path, content, embedding, metadata, start_line, end_line, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, strftime('%s', 'now'))
+            """, (chunk_id, file_path, content, embedding_json, json.dumps(metadata), start_line, end_line))
         else:
             # Use provided time
             cursor.execute("""
-                INSERT OR REPLACE INTO chunks (id, file_path, content, embedding, metadata, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?)
-            """, (chunk_id, file_path, content, embedding_json, json.dumps(metadata), updated_at))
+                INSERT OR REPLACE INTO chunks (id, file_path, content, embedding, metadata, start_line, end_line, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """, (chunk_id, file_path, content, embedding_json, json.dumps(metadata), start_line, end_line, updated_at))
             
         self.conn.commit()
 
@@ -133,7 +145,7 @@ class VectorStore:
         norm_query = np.linalg.norm(query_vec)
 
         cursor = self.conn.cursor()
-        cursor.execute("SELECT id, content, embedding, metadata, updated_at FROM chunks WHERE embedding IS NOT NULL")
+        cursor.execute("SELECT id, file_path, content, embedding, metadata, start_line, end_line, updated_at FROM chunks WHERE embedding IS NOT NULL")
         rows = cursor.fetchall()
 
         results = []
@@ -148,8 +160,11 @@ class VectorStore:
             
             results.append({
                 'id': row['id'],
+                'file_path': row['file_path'],
                 'content': row['content'],
                 'metadata': json.loads(row['metadata']),
+                'start_line': row['start_line'],
+                'end_line': row['end_line'],
                 'score': similarity,
                 'updated_at': row['updated_at'],
                 'embedding': chunk_embedding # Store as numpy array for MMR
@@ -167,7 +182,7 @@ class VectorStore:
         cursor = self.conn.cursor()
         # FTS5 match query
         cursor.execute("""
-            SELECT c.id, c.content, c.embedding, c.metadata, c.updated_at, chunks_fts.rank
+            SELECT c.id, c.file_path, c.content, c.embedding, c.metadata, c.start_line, c.end_line, c.updated_at, chunks_fts.rank
             FROM chunks_fts 
             JOIN chunks c ON chunks_fts.rowid = c.rowid
             WHERE chunks_fts MATCH ?
@@ -188,8 +203,11 @@ class VectorStore:
 
             results.append({
                 'id': row['id'],
+                'file_path': row['file_path'],
                 'content': row['content'],
                 'metadata': json.loads(row['metadata']) if row['metadata'] else {},
+                'start_line': row['start_line'],
+                'end_line': row['end_line'],
                 'score': score,
                 'updated_at': row['updated_at'],
                 'embedding': embedding
@@ -208,7 +226,6 @@ class VectorStore:
     def _mmr_rerank(self, items: List[Dict[str, Any]], lambda_param: float = 0.7) -> List[Dict[str, Any]]:
         """
         Maximal Marginal Relevance (MMR) re-ranking using Vector Similarity.
-        items: list of dicts with 'score', 'content', and 'embedding'.
         """
         if not items or lambda_param >= 1.0:
             return sorted(items, key=lambda x: x['score'], reverse=True)
@@ -233,9 +250,6 @@ class VectorStore:
                         if sim > max_sim:
                             max_sim = sim
                 else:
-                    # Fallback if no embedding: assume max_sim = 0 or use Jaccard?
-                    # Using 0 assumes it's distinct from everything, which boosts its chance.
-                    # Let's keep it 0 for now.
                     pass
 
                 mmr_score = lambda_param * relevance - (1 - lambda_param) * max_sim
@@ -251,13 +265,51 @@ class VectorStore:
                 
         return selected
 
-    def _calculate_decay(self, updated_at_ts: int, half_life_days: float = 30.0) -> float:
+    def _is_evergreen(self, file_path: str) -> bool:
+        """
+        Check if file is 'Evergreen' (not decaying).
+        Based on OpenClaw logic: MEMORY.md, or not matching YYYY-MM-DD.md pattern in memory/
+        """
+        normalized = file_path.replace("\\", "/").lstrip("./")
+        if normalized in ["MEMORY.md", "memory.md"]:
+            return True
+        if not normalized.startswith("memory/"):
+            return False
+        
+        # Check for YYYY-MM-DD.md pattern
+        match = re.search(r'(?:^|/)(\d{4})-(\d{2})-(\d{2})\.md$', normalized)
+        return match is None
+
+    def _parse_date_from_path(self, file_path: str) -> Optional[datetime]:
+        """Parse date from YYYY-MM-DD.md filename."""
+        normalized = file_path.replace("\\", "/").lstrip("./")
+        match = re.search(r'(?:^|/)(\d{4})-(\d{2})-(\d{2})\.md$', normalized)
+        if match:
+            try:
+                year, month, day = map(int, match.groups())
+                return datetime(year, month, day)
+            except ValueError:
+                return None
+        return None
+
+    def _calculate_decay(self, updated_at_ts: int, file_path: str, half_life_days: float = 30.0) -> float:
         if not half_life_days or half_life_days <= 0:
             return 1.0
         
+        # Evergreen check
+        if self._is_evergreen(file_path):
+            return 1.0
+            
         now = datetime.utcnow().timestamp()
-        # updated_at_ts is from sqlite strftime('%s', 'now') which is seconds
-        age_seconds = max(0, now - updated_at_ts)
+        
+        # Try to get age from filename date first (OpenClaw behavior)
+        file_date = self._parse_date_from_path(file_path)
+        if file_date:
+            age_seconds = max(0, now - file_date.timestamp())
+        else:
+            # Fallback to updated_at_ts (mtime)
+            age_seconds = max(0, now - updated_at_ts)
+            
         age_days = age_seconds / (24 * 3600)
         
         decay_lambda = math.log(2) / half_life_days
@@ -296,7 +348,6 @@ class VectorStore:
             doc_id = item['id']
             if doc_id in all_items:
                 all_items[doc_id]['text_score'] = item['score']
-                # If vector search found it, it has embedding. If not, kw search might have it.
                 if all_items[doc_id].get('embedding') is None and item.get('embedding') is not None:
                     all_items[doc_id]['embedding'] = item['embedding']
             else:
@@ -313,16 +364,11 @@ class VectorStore:
             
             # Apply Temporal Decay
             if decay_enabled:
-                # Check if "Evergreen" (e.g. root index or specific memory files)
-                path = item.get('file_path', '')
-                if 'MEMORY.md' in path or 'index.md' in path:
-                    pass # No decay
-                else:
-                    updated_at = item.get('updated_at')
-                    if updated_at:
-                        decay = self._calculate_decay(updated_at, decay_days)
-                        item['score'] *= decay
-                        item['decay_factor'] = decay
+                file_path = item.get('file_path', '')
+                updated_at = item.get('updated_at', 0)
+                decay = self._calculate_decay(updated_at, file_path, decay_days)
+                item['score'] *= decay
+                item['decay_factor'] = decay
 
             merged_results.append(item)
             
@@ -341,16 +387,16 @@ if __name__ == "__main__":
     store = VectorStore(db_path)
     
     # Add some dummy data
-    store.add_chunk("1", "test.md", "This is a test document about apples.", {"category": "fruit"})
-    store.add_chunk("2", "test.md", "This is a test document about oranges.", {"category": "fruit"})
-    store.add_chunk("3", "test.md", "I like to code in Python.", {"category": "coding"})
+    store.add_chunk("1", "memory/test.md", "This is a test document about apples.", 1, 1, {"category": "fruit"})
+    store.add_chunk("2", "memory/test.md", "This is a test document about oranges.", 2, 2, {"category": "fruit"})
+    store.add_chunk("3", "memory/test.md", "I like to code in Python.", 3, 3, {"category": "coding"})
 
     print("Searching for 'fruit'...")
     results = store.hybrid_search("fruit", limit=2, mmr_enabled=True)
     for res in results:
-        print(f"ID: {res['id']}, Score: {res['score']:.4f}, Content: {res['content']}")
+        print(f"ID: {res['id']}, Path: {res['file_path']}, Lines: {res['start_line']}-{res['end_line']}, Score: {res['score']:.4f}, Content: {res['content']}")
 
     print("\nSearching for 'python'...")
     results = store.hybrid_search("python", limit=2)
     for res in results:
-        print(f"ID: {res['id']}, Score: {res['score']:.4f}, Content: {res['content']}")
+        print(f"ID: {res['id']}, Path: {res['file_path']}, Lines: {res['start_line']}-{res['end_line']}, Score: {res['score']:.4f}, Content: {res['content']}")

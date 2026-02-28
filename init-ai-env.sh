@@ -4,6 +4,8 @@ set -euo pipefail
 # Ensure proxy settings are applied (User Rule)
 export http_proxy=http://10.48.113.10:8080
 export https_proxy=http://10.48.113.10:8080
+export OPENAI_API_KEY=642f21a1f8c64c11b1a814e892949865.KrgVUmfbdUO1I3mN
+export OPENAI_BASE_URL=https://open.bigmodel.cn/api/paas/v4
 
 echo "Initializing AI Development Environment..."
 
@@ -15,8 +17,8 @@ OPENSPEC_VERSION="1.2.0"
 rm -rf "${AI_ENV_DIR}"
 
 rm -rf "${PROJECT_ROOT}/.claude/skills/openspec" "${PROJECT_ROOT}/.claude/skills/OpenSpec" "${PROJECT_ROOT}/.claude/skills/openspec-repo"
-rm -rf "${PROJECT_ROOT}/.trae/skills/openspec" "${PROJECT_ROOT}/.trae/skills/OpenSpec" "${PROJECT_ROOT}/.trae/skills/openspec-repo"
-rm -rf "${PROJECT_ROOT}/.claude/skills/hkt-memory" "${PROJECT_ROOT}/.trae/skills/hkt-memory"
+# rm -rf "${PROJECT_ROOT}/.trae/skills/openspec" "${PROJECT_ROOT}/.trae/skills/OpenSpec" "${PROJECT_ROOT}/.trae/skills/openspec-repo"
+rm -rf "${PROJECT_ROOT}/.claude/skills/hkt-memory"
 
 if ! command -v node >/dev/null 2>&1; then
   echo "Node.js is required but was not found in PATH."
@@ -128,21 +130,21 @@ elif [ -d "${PROJECT_ROOT}/external/hkt-memory" ]; then
 fi
 
 # Sync ALL installed skills from .claude/skills to .trae/skills
-if [ -d "${PROJECT_ROOT}/.claude/skills" ]; then
-  echo "Syncing all skills from .claude/skills to .trae/skills..."
-  mkdir -p "${PROJECT_ROOT}/.trae/skills"
+# if [ -d "${PROJECT_ROOT}/.claude/skills" ]; then
+#   echo "Syncing all skills from .claude/skills to .trae/skills..."
+#   mkdir -p "${PROJECT_ROOT}/.trae/skills"
   
-  for skill_path in "${PROJECT_ROOT}/.claude/skills"/*; do
-    if [ -d "$skill_path" ]; then
-      skill_name=$(basename "$skill_path")
-      # Skip if strictly internal or ignored (optional)
+#   for skill_path in "${PROJECT_ROOT}/.claude/skills"/*; do
+#     if [ -d "$skill_path" ]; then
+#       skill_name=$(basename "$skill_path")
+#       # Skip if strictly internal or ignored (optional)
       
-      echo "Syncing skill: $skill_name"
-      rm -rf "${PROJECT_ROOT}/.trae/skills/$skill_name"
-      cp -R "$skill_path" "${PROJECT_ROOT}/.trae/skills/$skill_name"
-    fi
-  done
-fi
+#       echo "Syncing skill: $skill_name"
+#       # rm -rf "${PROJECT_ROOT}/.trae/skills/$skill_name"
+#       # cp -R "$skill_path" "${PROJECT_ROOT}/.trae/skills/"
+#     fi
+#   done
+# fi
 
 if [ ! -d "${PROJECT_ROOT}/openspec" ]; then
   if "${OPENSPEC_BIN}" init --help 2>/dev/null | grep -q -- "--skip-tools"; then
@@ -175,19 +177,8 @@ echo "Next: read AI_WORKFLOW_GUIDE.md"
 echo ""
 echo "--------------------------------------------------------------------------------"
 echo "🔧 配置 Embedding Provider (向量模型)"
-echo "请选择要使用的 Embedding 服务提供商："
-echo "1) OpenAI (官方 API)"
-echo "2) Zhipu AI (智谱 GLM - 国内推荐 🇨🇳)"
-echo "3) Local (本地 SentenceTransformer - 免费/无网)"
+echo "默认使用 Zhipu AI (GLM) embedding-3"
 echo "--------------------------------------------------------------------------------"
-
-read -p "请输入选项 [1-3] (默认 3): " provider_choice
-
-# Default to Local (3)
-if [ -z "$provider_choice" ]; then
-  provider_choice="3"
-fi
-
 export_env() {
   key="$1"
   val="$2"
@@ -214,43 +205,16 @@ export_env() {
   done
 }
 
-case "$provider_choice" in
-  1)
-    echo "👉 已选择: OpenAI"
-    read -p "请输入 OpenAI API Key: " input_key
-    if [ -n "$input_key" ]; then
-      export_env "OPENAI_API_KEY" "$input_key"
-      export_env "HKT_MEMORY_MODEL" "text-embedding-3-small"
-      # Clear Base URL to use default
-      if [ -f ~/.bashrc ]; then sed -i '' '/export OPENAI_BASE_URL=/d' ~/.bashrc; fi
-      unset OPENAI_BASE_URL
-      echo "✅ OpenAI 配置完成。"
-    else
-      echo "⚠️ 未输入 Key，回退到本地模式。"
-      export_env "HKT_MEMORY_MODEL" "all-MiniLM-L6-v2"
-    fi
-    ;;
-  2)
-    echo "👉 已选择: Zhipu AI (GLM)"
-    read -p "请输入 Zhipu API Key: " input_key
-    if [ -n "$input_key" ]; then
-      export_env "OPENAI_API_KEY" "$input_key"
-      export_env "OPENAI_BASE_URL" "https://open.bigmodel.cn/api/paas/v4/"
-      export_env "HKT_MEMORY_MODEL" "embedding-3"
-      echo "✅ Zhipu AI 配置完成 (使用 embedding-3 模型)。"
-    else
-      echo "⚠️ 未输入 Key，回退到本地模式。"
-      export_env "HKT_MEMORY_MODEL" "all-MiniLM-L6-v2"
-    fi
-    ;;
-  *)
-    echo "👉 已选择: Local (SentenceTransformer)"
-    export_env "HKT_MEMORY_MODEL" "all-MiniLM-L6-v2"
-    # Ensure force local
-    export_env "HKT_MEMORY_FORCE_LOCAL" "true"
-    echo "✅ 本地模式已配置 (模型: all-MiniLM-V2)。"
-    ;;
-esac
+if [ -z "${OPENAI_API_KEY:-}" ]; then
+  echo "❌ 未检测到 OPENAI_API_KEY，请先在环境中设置 GLM API Key。"
+  echo "例如：export OPENAI_API_KEY=\"<your-key>\""
+  exit 1
+fi
+
+export_env "OPENAI_BASE_URL" "https://open.bigmodel.cn/api/paas/v4/"
+export_env "HKT_MEMORY_MODEL" "embedding-3"
+export_env "HKT_MEMORY_FORCE_LOCAL" "false"
+echo "✅ Zhipu AI 配置完成 (使用 embedding-3 模型)。"
 
 echo "--------------------------------------------------------------------------------"
 echo "🔄 正在自动执行第一次同步 (hkt-memory sync)..."

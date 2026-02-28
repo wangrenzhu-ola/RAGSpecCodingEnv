@@ -1,5 +1,7 @@
 import os
 import sys
+import time
+import math
 from typing import List, Optional
 
 try:
@@ -11,14 +13,11 @@ except ImportError:
 # unless it's actually used.
 SentenceTransformer = None
 
-import time
-import math
-
 class EmbeddingClient:
     def __init__(self):
         self.api_key = os.environ.get("OPENAI_API_KEY")
-        self.base_url = os.environ.get("OPENAI_BASE_URL")
-        self.model = os.environ.get("HKT_MEMORY_MODEL", "all-MiniLM-L6-v2")
+        self.base_url = os.environ.get("OPENAI_BASE_URL", "https://open.bigmodel.cn/api/paas/v4/")
+        self.model = os.environ.get("HKT_MEMORY_MODEL", "embedding-3")
         self.force_local = os.environ.get("HKT_MEMORY_FORCE_LOCAL", "false").lower() == "true"
         self.mock_mode = os.environ.get("HKT_MEMORY_MOCK", "false").lower() == "true"
         
@@ -28,13 +27,18 @@ class EmbeddingClient:
         if self.mock_mode:
             print("Using Mock Embedding Provider (for testing/verification)")
         elif not self.force_local and self.api_key and OpenAI:
+            # Check if it looks like a Zhipu key (contains dot)
+            if "bigmodel.cn" in self.base_url and "." not in self.api_key:
+                 print("Warning: OPENAI_API_KEY format seems invalid for Zhipu AI (expected id.secret)")
+
             print(f"Initializing OpenAI compatible client with model: {self.model}")
+            print(f"  Base URL: {self.base_url}")
             # Increase timeout to 30 seconds
             self.client = OpenAI(api_key=self.api_key, base_url=self.base_url, timeout=30.0)
         else:
             try:
                 from sentence_transformers import SentenceTransformer
-                print(f"Initializing local model: {self.model}")
+                print(f"Initializing local model: {self.model} (Fallback)")
                 self.local_model = SentenceTransformer(self.model)
             except ImportError:
                 print("Warning: sentence-transformers not installed. Install with `pip install sentence-transformers`")
@@ -47,8 +51,10 @@ class EmbeddingClient:
             import hashlib
             h = hashlib.sha256(text.encode('utf-8')).digest()
             # Return 384 dimensions (standard for small models)
+            # Or 1024 for embedding-3 if needed, but 384 is safer for local fallback
             vec = []
-            for i in range(384):
+            dim = 1024 if self.model == "embedding-3" else 384
+            for i in range(dim):
                 # Use bytes to generate float between -1 and 1
                 b = h[i % 32]
                 val = (b / 128.0) - 1.0
@@ -73,12 +79,15 @@ class EmbeddingClient:
                         time.sleep(1 * (attempt + 1))
                     else:
                         print(f"Error calling embedding API: {e}")
-                        # Fallback to local if available? For now just raise or return empty
+                        # If API fails, maybe try local fallback if available?
+                        if self.local_model:
+                            print("Falling back to local model...")
+                            return self.local_model.encode(text).tolist()
                         raise e
         elif self.local_model:
             return self.local_model.encode(text).tolist()
         else:
-            raise RuntimeError("No embedding provider available. Check your configuration.")
+            raise RuntimeError("No embedding provider available. Check your configuration (OPENAI_API_KEY).")
 
 if __name__ == "__main__":
     # Simple CLI test
