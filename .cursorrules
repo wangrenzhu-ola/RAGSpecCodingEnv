@@ -1,0 +1,20 @@
+# AI Rules (Strict Token Economy)
+
+## Core Skills
+1. **hkt-memory**: 
+   - Start: `bash hkt-memory/entry.sh query --hybrid --keyword "..." --limit 5`
+   - End: `bash hkt-memory/entry.sh add --title "..." --content "..."` then `sync`
+   - Use BEFORE asking user.
+
+2. **openspec**:
+   - Change: `npx openspec proposal "..."` -> `apply` -> `archive`
+   - Read: `cat openspec/specs/*`
+
+3. **find-skills**:
+   - Missing capability? `npx openskills run find-skills "..."`
+   - Install found skill: `npx openskills install <path>`
+
+## Protocol
+- **Check Memory** -> **Check Specs** -> **Find Skill (if needed)** -> **Act**.
+- **No Chat**: Code > Explanations.
+- **Save Tokens**: Short, direct answers.

@@ -47,36 +47,16 @@ fi
 OPENSKILLS_BIN="${AI_ENV_DIR}/node_modules/.bin/openskills"
 OPENSPEC_BIN="${AI_ENV_DIR}/node_modules/.bin/openspec"
 
-# 1. Clone Anthropic Skills repo and install ALL skills
-echo "Cloning Anthropic Skills repository..."
-rm -rf "${AI_ENV_DIR}/anthropics-skills-repo"
-git clone https://github.com/anthropics/skills.git "${AI_ENV_DIR}/anthropics-skills-repo"
+# 1. Clone find-skills repo and install
+echo "Cloning find-skills repository..."
+rm -rf "${AI_ENV_DIR}/skills"
+git clone https://github.com/vercel-labs/skills.git "${AI_ENV_DIR}/skills"
 
-echo "Installing all Anthropic Skills..."
-for skill_dir in "${AI_ENV_DIR}/anthropics-skills-repo/skills"/*; do
-  if [ -d "$skill_dir" ]; then
-    skill_name=$(basename "$skill_dir")
-    echo "Installing skill: $skill_name"
-    "${OPENSKILLS_BIN}" install "$skill_dir" --yes || echo "Warning: Failed to install skill $skill_name"
-  fi
-done
-
-# 1.5. Clone and install Community Skills (alirezarezvani/claude-skills)
-echo "Cloning Community Skills repository (alirezarezvani/claude-skills)..."
-rm -rf "${AI_ENV_DIR}/community-skills-repo"
-git clone https://github.com/alirezarezvani/claude-skills.git "${AI_ENV_DIR}/community-skills-repo"
-
-echo "Installing all Community Skills..."
-# Find all directories containing SKILL.md and install them
-if [ -d "${AI_ENV_DIR}/community-skills-repo" ]; then
-    find "${AI_ENV_DIR}/community-skills-repo" -name "SKILL.md" -print0 | while IFS= read -r -d '' skill_file; do
-      skill_dir=$(dirname "$skill_file")
-      skill_name=$(basename "$skill_dir")
-      # Skip if it's the root repo SKILL.md (if any, though usually skills are in subdirs)
-      # But openskills install handles paths fine.
-      echo "Installing community skill: $skill_name"
-      "${OPENSKILLS_BIN}" install "$skill_dir" --yes || echo "Warning: Failed to install community skill $skill_name"
-    done
+echo "Installing find-skills skill..."
+if [ -d "${AI_ENV_DIR}/skills/skills/find-skills" ]; then
+    "${OPENSKILLS_BIN}" install "${AI_ENV_DIR}/skills/skills/find-skills" --yes
+else
+    echo "Warning: find-skills skill not found in expected location"
 fi
 
 # 2. Clone OpenSpec repo and make it a skill
@@ -130,21 +110,25 @@ elif [ -d "${PROJECT_ROOT}/external/hkt-memory" ]; then
 fi
 
 # Sync ALL installed skills from .claude/skills to .trae/skills
-# if [ -d "${PROJECT_ROOT}/.claude/skills" ]; then
-#   echo "Syncing all skills from .claude/skills to .trae/skills..."
-#   mkdir -p "${PROJECT_ROOT}/.trae/skills"
+if [ -d "${PROJECT_ROOT}/.claude/skills" ]; then
+  echo "Syncing all skills from .claude/skills to .trae/skills..."
+  mkdir -p "${PROJECT_ROOT}/.trae/skills"
   
-#   for skill_path in "${PROJECT_ROOT}/.claude/skills"/*; do
-#     if [ -d "$skill_path" ]; then
-#       skill_name=$(basename "$skill_path")
-#       # Skip if strictly internal or ignored (optional)
+  for skill_path in "${PROJECT_ROOT}/.claude/skills"/*; do
+    if [ -d "$skill_path" ]; then
+      skill_name=$(basename "$skill_path")
+      # Skip if strictly internal or ignored (optional)
       
-#       echo "Syncing skill: $skill_name"
-#       # rm -rf "${PROJECT_ROOT}/.trae/skills/$skill_name"
-#       # cp -R "$skill_path" "${PROJECT_ROOT}/.trae/skills/"
-#     fi
-#   done
-# fi
+      echo "Syncing skill: $skill_name"
+      rm -rf "${PROJECT_ROOT}/.trae/skills/$skill_name"
+      cp -R "$skill_path" "${PROJECT_ROOT}/.trae/skills/"
+    fi
+  done
+  echo "✅ Skills synced to .trae/skills"
+else
+  echo "⚠️  Source skills directory (.claude/skills) not found."
+  echo "Please manually copy skills to .trae/skills if needed."
+fi
 
 if [ ! -d "${PROJECT_ROOT}/openspec" ]; then
   if "${OPENSPEC_BIN}" init --help 2>/dev/null | grep -q -- "--skip-tools"; then
@@ -152,22 +136,6 @@ if [ ! -d "${PROJECT_ROOT}/openspec" ]; then
   else
     mkdir -p "${PROJECT_ROOT}/openspec/specs" "${PROJECT_ROOT}/openspec/changes"
   fi
-fi
-
-if [ ! -f "${PROJECT_ROOT}/AGENTS.md" ]; then
-  cat > "${PROJECT_ROOT}/AGENTS.md" <<'EOF'
-# AI Assistant Context
-
-You are an advanced AI software engineer operating in a Spec-Driven Development environment.
-
-## Workflow
-1. **Analyze**: Understand the user's request.
-2. **Check Specs**: Read `openspec/specs/` to understand current behavior.
-3. **Propose**: For non-trivial changes, create an OpenSpec proposal first.
-4. **Implement**: Implement strictly according to the agreed proposal/specs.
-5. **Archive**: After verification, archive the change so specs stay authoritative.
-6. **Memory**: 每轮对话前通过 hkt-memory 技能检索记忆，对话完毕后通过 hkt-memory 技能储存关键记忆。
-EOF
 fi
 
 "${OPENSKILLS_BIN}" sync --yes
@@ -227,18 +195,30 @@ fi
 echo "--------------------------------------------------------------------------------"
 echo "✅ AI 环境已准备就绪 🚀"
 echo "--------------------------------------------------------------------------------"
-echo ""
-echo "📌 AGENTS.md 调用规范（请手动复制到 AGENTS.md 中）"
-echo "--------------------------------------------------------------------------------"
-cat <<'EOF'
-## Workflow
-1. **Analyze**: Understand the user's request.
-2. **Check Specs**: Read `openspec/specs/` to understand current behavior.
-3. **Propose**: For non-trivial changes, create an OpenSpec proposal first.
-4. **Implement**: Implement strictly according to the agreed proposal/specs.
-5. **Archive**: After verification, archive the change so specs stay authoritative.
-6. **Memory First**: 需要查历史结论或上下文时，优先使用 hkt-memory 查询；只有在记忆不足或需要定位具体代码时才进行工作区搜索。
-7. **Memory Read**: 每轮开始前先执行 `bash .trae/skills/hkt-memory/entry.sh query --hybrid --keyword "<query>" --mmr --decay`。
-8. **Memory Write**: 每轮结束后将关键结论写入 `memory/` 并执行 `bash .trae/skills/hkt-memory/entry.sh sync`。
+
+# Auto-generate AGENTS.md with strict token economy rules
+cat > "${PROJECT_ROOT}/AGENTS.md" <<'EOF'
+# AI Rules (Strict Token Economy)
+
+## Core Skills
+1. **hkt-memory**: 
+   - Start: `bash hkt-memory/entry.sh query --hybrid --keyword "..." --limit 5`
+   - End: `bash hkt-memory/entry.sh add --title "..." --content "..."` then `sync`
+   - Use BEFORE asking user.
+
+2. **openspec**:
+   - Change: `npx openspec proposal "..."` -> `apply` -> `archive`
+   - Read: `cat openspec/specs/*`
+
+3. **find-skills**:
+   - Missing capability? `npx openskills run find-skills "..."`
+   - Install found skill: `npx openskills install <path>`
+
+## Protocol
+- **Check Memory** -> **Check Specs** -> **Find Skill (if needed)** -> **Act**.
+- **No Chat**: Code > Explanations.
+- **Save Tokens**: Short, direct answers.
 EOF
-echo "--------------------------------------------------------------------------------"
+echo "✅ AGENTS.md generated."
+echo ""
+
