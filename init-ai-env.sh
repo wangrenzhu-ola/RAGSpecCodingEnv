@@ -196,28 +196,29 @@ echo "--------------------------------------------------------------------------
 echo "✅ AI 环境已准备就绪 🚀"
 echo "--------------------------------------------------------------------------------"
 
-# Auto-generate AGENTS.md with strict token economy rules
+# Auto-generate AGENTS.md with strict token economy rules (Chinese)
 cat > "${PROJECT_ROOT}/AGENTS.md" <<'EOF'
-# AI Rules (Strict Token Economy)
+# AI 规则 (严格节省 Token)
 
-## Core Skills
-1. **hkt-memory**: 
-   - Start: `bash hkt-memory/entry.sh query --hybrid --keyword "..." --limit 5`
-   - End: `bash hkt-memory/entry.sh add --title "..." --content "..."` then `sync`
-   - Use BEFORE asking user.
+## 核心技能
+1. **hkt-memory (记忆系统)**: 
+   - **查 (缺上下文时必用)**: `bash hkt-memory/entry.sh query --keyword "..." --limit 5`
+     * **场景**: 只要你不完全清楚当前项目背景、历史决策或上下文，**必须**先查记忆。
+   - **记 (任务结束时)**: `bash hkt-memory/entry.sh add --title "..." --content "..."` 然后 `sync`
+     * **场景**: 每一轮对话/任务结束时，总结关键信息写入。
 
-2. **openspec**:
-   - Change: `npx openspec proposal "..."` -> `apply` -> `archive`
-   - Read: `cat openspec/specs/*`
+2. **openspec (规范系统)**:
+   - **改**: `npx openspec proposal "..."` -> `apply` -> `archive`
+   - **读**: `cat openspec/specs/*`
 
-3. **find-skills**:
-   - Missing capability? `npx openskills run find-skills "..."`
-   - Install found skill: `npx openskills install <path>`
+3. **find-skills (能力扩展)**:
+   - **缺能力**: `npx openskills run find-skills "..."`
+   - **装技能**: `npx openskills install <path>`
 
-## Protocol
-- **Check Memory** -> **Check Specs** -> **Find Skill (if needed)** -> **Act**.
-- **No Chat**: Code > Explanations.
-- **Save Tokens**: Short, direct answers.
+## 协议
+- **流程**: **查记忆 (未知上下文)** -> **看Spec** -> **找技能 (如需)** -> **行动**
+- **少聊**: 能写代码就不解释。
+- **省流**: 回答简短，直击要点。
 EOF
 echo "✅ AGENTS.md generated."
 echo ""
