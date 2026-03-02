@@ -26,7 +26,7 @@ Use hybrid search to find semantically related information.
 
 ```bash
 # Search with keywords (automatically uses hybrid vector + text search with MMR & Decay)
-HKT_MEMORY_FORCE_LOCAL=true python3 hkt-memory/scripts/hkt_memory.py query --keyword "<your query>" --limit 10
+HKT_MEMORY_FORCE_LOCAL=false python3 hkt-memory/scripts/hkt_memory.py query --keyword "<your query>" --limit 10
 ```
 
 ### 2. Store Memory
@@ -52,7 +52,7 @@ python3 hkt-memory/scripts/hkt_memory.py add \
 Run this after adding new memories to update the vector index.
 
 ```bash
-HKT_MEMORY_FORCE_LOCAL=true python3 hkt-memory/scripts/hkt_memory.py sync
+HKT_MEMORY_FORCE_LOCAL=false python3 hkt-memory/scripts/hkt_memory.py sync
 ```
 
 ## Rules
