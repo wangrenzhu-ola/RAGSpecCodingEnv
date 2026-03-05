@@ -5,6 +5,13 @@
 - **OpenSkills**：把可复用的“技能/操作规程”标准化成 `SKILL.md`，并同步到 `AGENTS.md`，让 AI 按需加载、可发现、可复用。
 - **OpenSpec**：把需求/意图从聊天记录里“抽出来”，落在 `openspec/` 里做成可评审、可归档的规格与变更提案，减少跑偏与返工。
 
+## 🔥 HKT-memory v3 更新速览（置顶）
+
+- **核心变化**：在 v2 混合检索基础上新增 Query Routing + 按需 Graph 扩展，查询可在 `hybrid_only` 与 `hybrid_plus_graph` 间自动切换。
+- **新增能力**：支持 `--show-mode` 查看路由模式，支持 `consolidate` 将会话结论按 `kind/scope/status/topic` 结构化沉淀。
+- **默认策略**：routing 与 graph 默认开启，可通过 `--no-routing` / `--no-graph` 快速降级回纯 Hybrid。
+- **完整文档**：见 [HKT-memory-v3-release.md](./HKT-memory-v3-release.md)。
+
 ## 解决什么问题
 
 - 需求在聊天里反复变更，AI 实现容易“漂移” → 用 OpenSpec 把 intent 锁定成规格/提案，先对齐再编码。
