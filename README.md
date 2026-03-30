@@ -5,12 +5,23 @@
 - **OpenSkills**：把可复用的“技能/操作规程”标准化成 `SKILL.md`，并同步到 `AGENTS.md`，让 AI 按需加载、可发现、可复用。
 - **OpenSpec**：把需求/意图从聊天记录里“抽出来”，落在 `openspec/` 里做成可评审、可归档的规格与变更提案，减少跑偏与返工。
 
-## 🔥 HKT-memory v3 更新速览（置顶）
+## 🔥 HKT-memory v4.5 更新速览（置顶）
 
-- **核心变化**：在 v2 混合检索基础上新增 Query Routing + 按需 Graph 扩展，查询可在 `hybrid_only` 与 `hybrid_plus_graph` 间自动切换。
-- **新增能力**：支持 `--show-mode` 查看路由模式，支持 `consolidate` 将会话结论按 `kind/scope/status/topic` 结构化沉淀。
-- **默认策略**：routing 与 graph 默认开启，可通过 `--no-routing` / `--no-graph` 快速降级回纯 Hybrid。
-- **完整文档**：见 [HKT-memory-v3-release.md](./HKT-memory-v3-release.md)。
+- **核心变化**：对标 LanceDB Pro，实现完整的 6 阶段检索管道 (Adaptive → Hybrid → Rerank → Lifecycle → MMR → Scope Filter)。
+- **新增能力**：
+  - **BM25 全文检索**：SQLite FTS5 + 中文分词 (jieba)，代码/专有名词召回率 40%→80%+
+  - **混合融合**：Vector(0.7) + BM25(0.3) Fusion，可配置权重
+  - **自适应检索**：智能跳过问候/短句查询，强制关键词触发
+  - **MMR 多样性**：相似度>0.85 降权，增加结果多样性
+  - **Multi-Scope 隔离**：global/agent/project/user 多租户隔离
+- **CLI 增强**：新增 `--mode hybrid/bm25/vector`、`--scope`、`--min-score`、`--mmr-threshold` 等参数
+- **完整文档**：见 [hkt-memory/SKILL.md](./hkt-memory/SKILL.md)
+
+---
+
+### 历史版本
+- [HKT-memory v3](./HKT-memory-v3-release.md)：Query Routing + Graph 扩展
+- [HKT-memory v2](./HKT-memory-v2-release.md)：混合检索基础版
 
 ## 解决什么问题
 
@@ -99,12 +110,38 @@ git clone https://github.com/olaola-chat/OP-AI-SPEC-CODING-ENV.git /tmp/op-ai-wo
 3. **Update Specs**: Keep specs as the source of truth.
 ```
 
-### 2. HKT 记忆引擎（渐进式披露）
+### 2. HKT 记忆引擎（v4.5 生产级检索）
 
-用于将长期记忆以 Root → Branch → Leaf 的树状结构组织，支持渐进式披露与主动检索，避免上下文过载。
+基于 LanceDB Pro 架构的完整长期记忆系统，支持 6 阶段检索管道：
 
-- **能力**：渐进式检索、结构化记忆写入、可追溯 Leaf 记录
-- **详情**：见 [DESIGN.md](./hkt-memory/DESIGN.md)
+- **BM25 全文检索**：SQLite FTS5 + 中文分词，精确匹配代码/专有名词
+- **混合融合检索**：Vector(0.7) + BM25(0.3) 权重可调
+- **自适应检索**：智能判断是否需要检索（跳过问候/短句）
+- **Cross-Encoder 重排序**：Jina/SiliconFlow API 支持
+- **Weibull Decay 生命周期**：Core/Working/Peripheral 三层衰减
+- **MMR 多样性优化**：自动降低重复结果权重
+- **Multi-Scope 隔离**：global/agent/project/user 作用域隔离
+- **L0/L1/L2 分层存储**：渐进式披露，快速检索
+
+**快速使用**：
+```bash
+# 存储记忆（带scope）
+python3 hkt-memory/scripts/hkt_memory_v4.py store \
+  --content "用户偏好Python开发" \
+  --scope agent:myagent
+
+# 混合检索
+python3 hkt-memory/scripts/hkt_memory_v4.py retrieve \
+  --query "Python框架" \
+  --mode hybrid \
+  --scope global,agent:myagent
+
+# 测试检索管道
+python3 hkt-memory/scripts/hkt_memory_v4.py test-retrieval \
+  --query "记得上次说的配置吗"
+```
+
+- **详情**：见 [SKILL.md](./hkt-memory/SKILL.md)
 
 ### 3. Anthropic 官方技能 (推荐)
 
